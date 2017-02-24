@@ -1,4 +1,5 @@
 import stream from 'stream';
+import crypto from 'crypto';
 
 // https://nodejs.org/api/stream.html#stream_implementing_a_duplex_stream
 class DigestStream extends stream.Transform {
@@ -19,13 +20,8 @@ class DigestStream extends stream.Transform {
 
   _flush(callback) {
     this.hash = this._hash.digest(this._format);
+    callback();
   }
-
-  // For alternate formats
-  digest(format) {
-    return this._hash.digest(format);
-  }
-
 }
 
 module.exports = DigestStream;

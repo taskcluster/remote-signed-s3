@@ -295,8 +295,14 @@ function parseS3Response(body, noThrow = false) {
  */
 async function run(generalRequest, body, noThrow) {
   let {url, method, headers} = generalRequest;
+  method = method.toUpperCase();
+
 
   if (body) {
+    if (method === 'GET' || method === 'HEAD') {
+      throw new Error('It is a violation of HTTP for GET or HEAD to have body');
+    }
+
     if (typeof body !== 'string' && typeof body.pipe !== 'function') {
       throw new Error('If provided, body must be string or readable stream');
     }
@@ -309,35 +315,36 @@ async function run(generalRequest, body, noThrow) {
     let requestSize = 0;
     let responseHash = crypto.createHash('sha256');
     let responseSize = 0;
-    
+
     function reject(err) {
       let string = [
         'ERROR: ' + err,
         `${method} ${url}`,
         `Headers: ${JSON.stringify(headers, null, 2)}`,
-        `Request body ${requestHash.digest('hex')} (${requestSize} bytes)`,
-        `Response body ${responseHash.digest('hex')} (${responseSize} bytes)`,
+        `Request body ${requestHash} (${requestSize} bytes)`,
+        `Response body ${responseHash} (${responseSize} bytes)`,
       ].join('\n');
       debug(string);
       return _reject(err);
     }
 
     let parts = urllib.parse(url);
-    parts.method = method.toUpperCase();
+    parts.method = method;
     parts.headers = headers;
-
-
     let request = https.request(parts);
+
+
 
     request.on('error', reject);
 
     request.on('response', response => {
-      let responseHash = crypto.createHash('sha256');
-      let responseSize = 0;
+      let statusCode = response.statusCode;
+      let statusMsg = response.statusMessage;
       let responseChunks = [];
 
       response.on('error', reject);
 
+      // Maybe pipe the request to a DigestStream?
       response.on('data', data => {
         try {
           responseHash.update(data);
@@ -349,16 +356,57 @@ async function run(generalRequest, body, noThrow) {
       });
 
       response.on('end', () => {
+        responseHash = responseHash.digest('hex');
         try {
+          let string = [];
+          let error = false;
+
+          if (statusCode >= 200 && statusCode < 300) {
+            string.push('SUCCESS: ');
+          } else {
+            string.push('ERROR: ');
+            error = true;
+          }
+
+          string.push([`${statusCode} ${statusMsg} ${method} "${url}"`]);
           let responseBody = Buffer.concat(responseChunks);
-          let string = [
-            `SUCCESS ${method} "${url}" `,
-            `REQ: ${requestHash.digest('hex')} (${requestSize} bytes) `,
-            `RES: ${responseHash.digest('hex')} (${responseSize} bytes)`,
-          ].join('');
+
+          if (requestSize > 0) {
+            string.push(` REQ: ${requestHash} (${requestSize} bytes)`);
+          } else {
+            string.push(' REQ: empty');
+          }
+          if (responseSize > 0) {
+            string.push(` RES: ${responseHash} (${responseSize} bytes)`);
+          } else {
+            string.push(' REQ: empty');
+          }
+          
+          string = string.join('');
           debug(string);
 
-          resolve(responseBody.toString());
+          if (error) {
+            let err = new Error('Error running General HTTP Request');
+            err.url = url;
+            err.headers = headers;
+            err.method = method;
+            err.statusCode = statusCode;
+            if (!noThrow) {
+              throw err;
+            }
+          } else {
+            resolve({
+              body: responseBody,
+              headers: response.headers,
+              statusCode,
+              statusMessage: statusMsg,
+              requestHash,
+              requestSize,
+              responseHash,
+              responseSize
+            });
+          }
+
         } catch (err) {
           reject(err);
         }
@@ -368,17 +416,23 @@ async function run(generalRequest, body, noThrow) {
     if (body) {
       if (typeof body === 'string' || body instanceof Buffer) {
         requestHash.update(body);
+        requestHash = requestHash.digest('hex');
         requestSize = body.length;
         request.write(body);
+        request.end();
       } else if (typeof body.pipe === 'function') {
-
+        let ds = new DigestStream();
+        ds.on('end', () => {
+          requestHash = ds.hash;
+          request.end();
+        });
+        body.pipe(ds).pipe(request);
       } 
     } else {
       request.end();
     }
 
   });
-  //return {body: '', headers: '', statusCode: 200};
 }
 
 module.exports = {
