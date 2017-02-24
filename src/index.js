@@ -5,6 +5,8 @@ import https from 'https';
 import urllib from 'url';
 import _debug from 'debug';
 
+import libxml from 'libxmljs';
+
 let debug = _debug('remote-s3');
 
 /**
@@ -51,6 +53,45 @@ class S3 {
   __generateCompleteUploadBody(etags) {
     return ''; 
   }
+
+  /**
+   * Obtain an UploadId from an Initiate Multipart Upload response body
+   */
+  __getUploadId(doc, bucket, key) {
+    if (doc.root().name() !== 'InitiateMultipartUploadResult') {
+      throw new Error('Document is not an InitiateMultipartUploadResult');
+    }
+
+    let uploadId, foundBucket, foundKey;
+    
+    for (let child of doc.root().childNodes()) {
+      switch (child.name()) {
+        case 'Bucket':
+          foundBucket = child.text();
+          break;
+        case 'Key':
+          foundKey = child.text();
+          break;
+        case 'UploadId':
+          uploadId = child.text();
+          break;
+      }
+    }
+
+    if (foundBucket !== bucket) {
+      throw new Error('Document contains incorrect Bucket');
+    }
+
+    if (foundKey !== key) {
+      throw new Error('Document contains incorrect Key');
+    }
+
+    if (!uploadId) {
+      throw new Error('Document does not contain UploadId');
+    }
+
+    return uploadId;
+  }
  
   /**
    * Initiate a Multipart upload and return the UploadIp that
@@ -71,9 +112,9 @@ class S3 {
       }
     });
 
+
     let response = await run(this.__serializeRequest(signedRequest));
-    //let uploadId = response.getFromXml('UploadId');
-    let uploadId = '<placeholder>';
+    let uploadId = this.__getUploadId(response, bucket, key);
     return uploadId;
   }
 
@@ -181,9 +222,40 @@ class S3 {
  * Check a response body for an S3 api error and throw it if present.
  * If there is no response return either `undefined` for an empty
  * body or an interface to the result of XML parsing
+ *
+ * http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
  */
-function parseS3Response(body) {
-  return;
+function parseS3Response(body, noThrow = false) {
+  if (!body) {
+    return undefined;
+  }
+
+  let doc = libxml.parseXml(body);
+  
+  // For Errors, we want to make sure that all the error properties
+  // are exposed
+  if (doc.root().name() === 'Error') {
+    let errorProperties = {};
+    for (let child of doc.root().childNodes()) {
+      errorProperties[child.name()] = child.text();
+    }
+    let error = new Error(errorProperties.Message || 'Unknown S3 Error');
+    for (let property in errorProperties) {
+      error[property.toLowerCase()] = errorProperties[property];
+    }
+
+    if (!error.code) {
+      error.code = 'UnknownError';
+    }
+
+    if (noThrow) {
+      return error;
+    } else {
+      throw error;
+    }
+  }
+
+  return doc;
 }
 
 /**
