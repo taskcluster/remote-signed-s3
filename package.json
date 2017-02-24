@@ -1,0 +1,20 @@
+{
+  "name": "remotely-signed-s3",
+  "version": "1.0.0",
+  "description": "Do remote signing for S3 using V4 signatures",
+  "main": "lib/index.js",
+  "dependencies": {
+    "babel-compile": "^2.0.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [
+    "taskcluster",
+    "aws",
+    "aws4"
+  ],
+  "author": "John Ford <jhford@mozilla.com>",
+  "license": "MPL-2.0"
+}
