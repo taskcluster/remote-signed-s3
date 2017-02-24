@@ -14,7 +14,6 @@ const debug = _debug('remote-s3:Bucket');
 // SHA256 Hex digests that they are a valid format
 const emptyStringSha256 = crypto.createHash('sha256').update('').digest('hex');
 function validateSha256 (sha256) {
-  console.log(sha256);
   if (sha256 === emptyStringSha256) {
     throw new Error('SHA256 values must not be of the empty string');
   } else if (!/^[a-fA-F0-9]{64}$/.test(sha256)) {
@@ -95,12 +94,12 @@ class S3 {
   /**
    * Obtain an UploadId from an Initiate Multipart Upload response body
    */
-  __getUploadId(doc, bucket, key) {
-    if (doc.root().name() !== 'InitiateMultipartUploadResult') {
-      throw new Error('Document is not an InitiateMultipartUploadResult');
+  __getResponseProperty(doc, container, property, bucket, key) {
+    if (doc.root().name() !== container) {
+      throw new Error('Document does not have ' + container);
     }
 
-    let uploadId, foundBucket, foundKey;
+    let lookingfor, foundBucket, foundKey;
     
     for (let child of doc.root().childNodes()) {
       switch (child.name()) {
@@ -110,8 +109,8 @@ class S3 {
         case 'Key':
           foundKey = child.text();
           break;
-        case 'UploadId':
-          uploadId = child.text();
+        case property:
+          lookingfor = child.text();
           break;
       }
     }
@@ -124,11 +123,25 @@ class S3 {
       throw new Error('Document contains incorrect Key');
     }
 
-    if (!uploadId) {
-      throw new Error('Document does not contain UploadId');
+    if (typeof lookingfor === 'undefined') {
+      throw new Error('Document does not contain ' + property);
     }
 
-    return uploadId;
+    return lookingfor;
+  }
+  /**
+   * Obtain an UploadId from an Initiate Multipart Upload response body
+   */
+  __getUploadId(doc, bucket, key) {
+    return this.__getResponseProperty(doc, 'InitiateMultipartUploadResult', 'UploadId', bucket, key);
+  }
+
+  __getMultipartEtag(doc, bucket, key) {
+    return this.__getResponseProperty(doc, 'CompleteMultipartUploadResult', 'ETag', bucket, key);
+  }
+
+  __getSinglepartEtag(doc, bucket, key) {
+
   }
  
   /**
@@ -229,6 +242,7 @@ class S3 {
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
+    return this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
   }
 
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
