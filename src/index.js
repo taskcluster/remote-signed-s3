@@ -283,7 +283,7 @@ function parseS3Response(body, noThrow = false) {
  * module.
  */
 async function run(request, body) {
-  return {body: '', headers: ''};
+  return {body: '', headers: '', statusCode: 200};
 }
 
 module.exports = {
