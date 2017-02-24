@@ -2,7 +2,7 @@ import aws4 from 'aws4';
 
 import http from 'http';
 import https from 'https';
-import urllib from 'urllib';
+import urllib from 'url';
 import _debug from 'debug';
 
 let debug = _debug('remote-s3');
@@ -22,7 +22,7 @@ let debug = _debug('remote-s3');
  * the part number.  S3 uses 1-based counting counter to Javascripts 0-based
  * indexing.  This means that PartNumber === JS-Index + 1
  */
-class S3Upload {
+class S3 {
   constructor(region) {
     this.region = region;
     let s3region = region === 'us-east-1' ? '' : '.' + region;
@@ -175,8 +175,6 @@ class S3Upload {
       }
     });
   }
-
-
 }
 
 /**
@@ -196,3 +194,9 @@ async function run(method, url, headers, body = '') {
   debug(`${method} ${url} ${JSON.stringify(headers)}`);
   // make sure to call parseS3Response and return the value from that
 }
+
+module.exports = {
+  S3,
+  run,
+  parseS3Response
+};

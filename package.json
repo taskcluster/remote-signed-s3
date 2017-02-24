@@ -4,15 +4,17 @@
   "description": "Do remote signing for S3 using V4 signatures",
   "main": "lib/index.js",
   "dependencies": {
+    "assume": "^1.4.1",
     "aws4": "^1.6.0"
   },
   "devDependencies": {
+    "assume": "^1.4.1",
     "babel-compile": "^2.0.0",
     "babel-preset-taskcluster": "^3.0.0",
     "mocha": "^3.2.0"
   },
   "scripts": {
-    "compile": "babel-compile -p taskcluster src:lib",
+    "compile": "babel-compile -p taskcluster src:lib test-src:test",
     "prepublish": "npm run compile",
     "pretest": "npm run compile",
     "test": "mocha"
