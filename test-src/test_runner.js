@@ -1,8 +1,10 @@
-let crypto = require('crypto');
-let fs = require('fs');
-let assume = require('assume');
-let sinon = require('sinon');
-let { run } = require('../');
+const crypto = require('crypto');
+const fs = require('fs');
+const assume = require('assume');
+const sinon = require('sinon');
+const Runner = require('../lib/runner');
+
+const run = new Runner().run;
 
 const httpbin = 'https://httpbin.org/';
 
