@@ -25,10 +25,12 @@ let debug = _debug('remote-s3');
  * indexing.  This means that PartNumber === JS-Index + 1
  */
 class S3 {
-  constructor(region) {
+  constructor(region, runner) {
     this.region = region;
-    let s3region = region === 'us-east-1' ? '' : '.' + region;
-    this.s3host = `s3${s3region}.amazonaws.com`;
+    this.runner = runner;
+    // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
+    let s3region = region === 'us-east-1' ? 's3' : 's3-' + region;
+    this.s3host = `${s3region}.amazonaws.com`;
   }
 
   /** Convert the result from the aws4.sign method into the
@@ -133,8 +135,8 @@ class S3 {
     });
 
 
-    let response = await run(this.__serializeRequest(signedRequest));
-    let uploadId = this.__getUploadId(response, bucket, key);
+    let response = await this.runner(this.__serializeRequest(signedRequest));
+    let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
     return uploadId;
   }
 
@@ -185,15 +187,11 @@ class S3 {
       method: 'POST',
       protocol: 'https:',
       hostname: `${bucket}.${this.s3host}`,
-      path: `/${key}?uploads=`,
-      headers: {
-        'x-amz-meta-taskcluster-content-sha256': sha256,
-        'x-amz-meta-taskcluster-content-length': size,
-      },
+      path: `/${key}?uploadId=${uploadId}`,
       body: requestBody,
     });
 
-    await run(this.__serializeRequest(signedRequest), requestBody);
+    await this.runner(this.__serializeRequest(signedRequest), requestBody);
   }
 
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
@@ -201,17 +199,13 @@ class S3 {
     let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
-      method: 'POST',
+      method: 'DELETE',
       protocol: 'https:',
       hostname: `${bucket}.${this.s3host}`,
       path: `/${key}?uploads=`,
-      headers: {
-        'x-amz-meta-taskcluster-content-sha256': sha256,
-        'x-amz-meta-taskcluster-content-length': size,
-      }
     });
 
-    await run(this.__serializeRequest(signedRequest));
+    await this.runner(this.__serializeRequest(signedRequest));
   }
 
   /**
@@ -282,9 +276,8 @@ function parseS3Response(body, noThrow = false) {
  * Run a generic request using information return by the S3 class in this
  * module.
  */
-async function run(method, url, headers, body = '') {
-  debug(`${method} ${url} ${JSON.stringify(headers)}`);
-  // make sure to call parseS3Response and return the value from that
+async function run(request, body) {
+  return {body: '', headers: ''};
 }
 
 module.exports = {
