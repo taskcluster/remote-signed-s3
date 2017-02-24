@@ -4,6 +4,8 @@ import http from 'http';
 import https from 'https';
 import urllib from 'url';
 import _debug from 'debug';
+import DigestStream from './digest-stream';
+import crypto from 'crypto';
 
 import libxml from 'libxmljs';
 
@@ -136,6 +138,9 @@ class S3 {
 
 
     let response = await this.runner(this.__serializeRequest(signedRequest));
+    if (response.statusCode !== 200) {
+      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+    }
     let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
     return uploadId;
   }
@@ -192,7 +197,10 @@ class S3 {
       body: requestBody,
     });
 
-    await this.runner(this.__serializeRequest(signedRequest), requestBody);
+    let response = await this.runner(this.__serializeRequest(signedRequest), requestBody);
+    if (response.statusCode !== 200) {
+      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+    }
   }
 
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
@@ -206,7 +214,10 @@ class S3 {
       path: `/${key}?uploads=`,
     });
 
-    await this.runner(this.__serializeRequest(signedRequest));
+    let response = await this.runner(this.__serializeRequest(signedRequest));
+    if (response.statusCode !== 204) {
+      throw new Error('Expected HTTP Status Code 204, got: ' + response.statusCode);
+    }
   }
 
   /**
@@ -282,12 +293,97 @@ function parseS3Response(body, noThrow = false) {
  * Run a generic request using information return by the S3 class in this
  * module.
  */
-async function run(request, body) {
-  return {body: '', headers: '', statusCode: 200};
+async function run(generalRequest, body, noThrow) {
+  let {url, method, headers} = generalRequest;
+
+  if (body) {
+    if (typeof body !== 'string' && typeof body.pipe !== 'function') {
+      throw new Error('If provided, body must be string or readable stream');
+    }
+  }
+
+  return new Promise((resolve, _reject) => {
+    // We need to parse the URL for the basis of our request options
+    // for the actual HTTP request
+    let requestHash = crypto.createHash('sha256');
+    let requestSize = 0;
+    let responseHash = crypto.createHash('sha256');
+    let responseSize = 0;
+    
+    function reject(err) {
+      let string = [
+        'ERROR: ' + err,
+        `${method} ${url}`,
+        `Headers: ${JSON.stringify(headers, null, 2)}`,
+        `Request body ${requestHash.digest('hex')} (${requestSize} bytes)`,
+        `Response body ${responseHash.digest('hex')} (${responseSize} bytes)`,
+      ].join('\n');
+      debug(string);
+      return _reject(err);
+    }
+
+    let parts = urllib.parse(url);
+    parts.method = method.toUpperCase();
+    parts.headers = headers;
+
+
+    let request = https.request(parts);
+
+    request.on('error', reject);
+
+    request.on('response', response => {
+      let responseHash = crypto.createHash('sha256');
+      let responseSize = 0;
+      let responseChunks = [];
+
+      response.on('error', reject);
+
+      response.on('data', data => {
+        try {
+          responseHash.update(data);
+          responseSize += data.length;
+          responseChunks.push(data);
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      response.on('end', () => {
+        try {
+          let responseBody = Buffer.concat(responseChunks);
+          let string = [
+            `SUCCESS ${method} "${url}" `,
+            `REQ: ${requestHash.digest('hex')} (${requestSize} bytes) `,
+            `RES: ${responseHash.digest('hex')} (${responseSize} bytes)`,
+          ].join('');
+          debug(string);
+
+          resolve(responseBody.toString());
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    if (body) {
+      if (typeof body === 'string' || body instanceof Buffer) {
+        requestHash.update(body);
+        requestSize = body.length;
+        request.write(body);
+      } else if (typeof body.pipe === 'function') {
+
+      } 
+    } else {
+      request.end();
+    }
+
+  });
+  //return {body: '', headers: '', statusCode: 200};
 }
 
 module.exports = {
   S3,
   run,
+  DigestStream,
   parseS3Response
 };
