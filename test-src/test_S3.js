@@ -82,10 +82,11 @@ describe('S3 Client', () => {
       });
 
       let result = await inst.initiateMultipartUpload('example-bucket', 'example-object', 'testsha256', 1234);
+      assume(result.statusCode).equals(200);
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
-      checkRunner(mock,{
+      checkRunner(mock, {
         url: 'https://example-bucket.s3.amazonaws.com/example-object?uploads=',
         method: 'POST',
         headerKeys: ['X-Amz-Date', 'Authorization'],
