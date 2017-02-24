@@ -79,10 +79,10 @@ describe('S3 Client', () => {
       mock.returns({
         body: body,
         headers: {},
+        statusCode: 200,
       });
 
       let result = await inst.initiateMultipartUpload('example-bucket', 'example-object', 'testsha256', 1234);
-      assume(result.statusCode).equals(200);
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
@@ -112,6 +112,7 @@ describe('S3 Client', () => {
       mock.returns({
         body: '',
         headers: {},
+        statusCode: 200,
       });
 
       let result = await inst.completeMultipartUpload('example-bucket', 'example-object', 'testsha256', etags);
@@ -138,6 +139,7 @@ describe('S3 Client', () => {
       mock.returns({
         body: '',
         headers: {},
+        statusCode: 204,
       });
 
       let result = await inst.abortMultipartUpload('example-bucket', 'example-object', 'myuploadid');
@@ -189,7 +191,6 @@ describe('S3 Client', () => {
 
       let result = await inst.generateSinglepartRequest('example-bucket', 'example-key', size, sha256);
       
-      console.log(result);
       assume(result).has.property('url', `https://example-bucket.s3.amazonaws.com/example-key`);
       assume(result).has.property('method', 'PUT');
       assume(result).has.property('headers');
