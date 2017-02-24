@@ -11,7 +11,7 @@ process.on('unhandledRejection', err => {
 function runner () {
   let mock = sinon.mock();
   mock.onSecondCall().throws(new Error('Only call runner once!'));
-  let inst = new S3('us-east-1', mock);
+  let inst = new S3('us-east-1', {run: mock});
   return {mock, inst};
 }
 
