@@ -49,9 +49,29 @@ class S3 {
    * This function takes an ordered list of Etag values and generates the XML
    * Body that S3 expects.  The PartNumber will be the index of the supplied
    * list + 1 to account for the 1-based numbering of PartNumbers
+   *
+   * EXAMPLE:
+   * <CompleteMultipartUpload>
+   *   <Part>
+   *     <PartNumber>PartNumber</PartNumber>
+   *     <ETag>ETag</ETag>
+   *   </Part>
+   * </CompleteMultipartUpload>
    */
   __generateCompleteUploadBody(etags) {
-    return ''; 
+    let doc = new libxml.Document();
+
+    let ctx = doc.node('CompleteMultipartUpload');
+    for (let x = 0; x < etags.length; x++) {
+      ctx = ctx.node('Part');
+      ctx = ctx.node('PartNumber', Number(x+1).toString());
+      ctx = ctx.parent();
+      ctx = ctx.node('ETag', etags[x]);
+      ctx = ctx.parent();
+      ctx = ctx.parent();
+    }
+
+    return doc.toString();
   }
 
   /**
