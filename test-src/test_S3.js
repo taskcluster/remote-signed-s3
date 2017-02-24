@@ -84,13 +84,13 @@ describe('S3 Client', () => {
       });
 
       // rando sha256
-      let result = await inst.initiateMultipartUpload(
-        'example-bucket',
-        'example-object',
-        'testsha256',
-        '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
-        1234
-      );
+      let result = await inst.initiateMultipartUpload({
+        bucket: 'example-bucket',
+        key: 'example-object',
+        uploadId: 'testsha256',
+        sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+        size: 1234,
+      });
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
@@ -99,10 +99,10 @@ describe('S3 Client', () => {
         method: 'POST',
         headerKeys: ['X-Amz-Date', 'Authorization'],
         headerValues: {
-          'x-amz-meta-taskcluster-content-sha256': 'testsha256',
+          'x-amz-meta-taskcluster-content-sha256': '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
           'x-amz-meta-taskcluster-content-length': 1234,
           Host: 'example-bucket.s3.amazonaws.com',
-          'X-Amz-Content-Sha256': '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          'X-Amz-Content-Sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
         }
       });
     });
@@ -110,37 +110,37 @@ describe('S3 Client', () => {
     it('should not allow parts with size <= 0', () => {
       let {inst} = runner();
 
-      return assertReject(inst.initiateMultipartUpload(
-        'bucket',
-        'key',
-        'uploadId',
-        '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
-        0
-      ));
+      return assertReject(inst.initiateMultipartUpload({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+        size: 0,
+      }));
     });
 
     it('should not allow parts with an empty string sha256', () => {
       let {inst} = runner();
 
-      return assertReject(inst.initiateMultipartUpload(
-        'bucket',
-        'key',
-        'uploadId',
-        crypto.createHash('sha256').update('').digest('hex'),
-        1
-      ));
+      return assertReject(inst.initiateMultipartUpload({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        sha256: crypto.createHash('sha256').update('').digest('hex'),
+        size: 1,
+      }));
     });
 
     it('should not allow parts with invalid sha256', () => {
       let {inst} = runner();
 
-      return assertReject(inst.initiateMultipartUpload(
-        'bucket',
-        'key',
-        'uploadId',
-        'asdflasdf',
-        1
-      ));
+      return assertReject(inst.initiateMultipartUpload({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        sha256: 'asdflasdf',
+        size: 1,
+      }));
     });
   });
 
@@ -159,12 +159,17 @@ describe('S3 Client', () => {
         statusCode: 200,
       });
 
-      let result = await inst.completeMultipartUpload('example-bucket', 'example-object', 'testsha256', etags);
+      let result = await inst.completeMultipartUpload({
+        bucket: 'example-bucket',
+        key: 'example-object',
+        uploadId: 'myuploadid',
+        etags: etags,
+      });
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
       checkRunner(mock, {
-        url: 'https://example-bucket.s3.amazonaws.com/example-object?uploads=',
+        url: 'https://example-bucket.s3.amazonaws.com/example-object?uploadId=myuploadid',
         method: 'POST',
         headerKeys: ['X-Amz-Date', 'Authorization'],
         body: body,
@@ -186,7 +191,11 @@ describe('S3 Client', () => {
         statusCode: 204,
       });
 
-      let result = await inst.abortMultipartUpload('example-bucket', 'example-object', 'myuploadid');
+      let result = await inst.abortMultipartUpload({
+        bucket: 'example-bucket',
+        key: 'example-object',
+        uploadId: 'myuploadid',
+      });
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
@@ -209,7 +218,12 @@ describe('S3 Client', () => {
         {sha256: crypto.createHash('sha256').update('part2').digest('hex'), size: 1024},
         {sha256: crypto.createHash('sha256').update('part3').digest('hex'), size: 128},
       ];
-      let result = await inst.generateMultipartRequest('example-bucket', 'example-key', 'example-uploadid', parts);
+      let result = await inst.generateMultipartRequest({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        uploadId: 'example-uploadid',
+        parts: parts
+      });
 
       let n = 1;
       for (let request of result) {
@@ -229,25 +243,40 @@ describe('S3 Client', () => {
     it('should not allow parts with size <= 0', () => {
       let {inst} = runner();
 
-      return assertReject(inst.generateMultipartRequest('bucket', 'key', 'uploadId', [
-        {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 0},
-      ]));
+      return assertReject(inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: [
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 0},
+        ],
+      }));
     });
 
     it('should not allow parts with an empty string sha256', () => {
       let {inst} = runner();
 
-      return assertReject(inst.generateMultipartRequest('bucket', 'key', 'uploadId', [
-        {sha256: crypto.createHash('sha256').update('').digest('hex'), size: 1},
-      ]));
+      return assertReject(inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId', 
+        parts: [
+          {sha256: crypto.createHash('sha256').update('').digest('hex'), size: 1},
+        ],
+      }));
     });
 
     it('should not allow parts with invalid sha256', () => {
       let {inst} = runner();
 
-      return assertReject(inst.generateMultipartRequest('bucket', 'key', 'uploadId', [
-        {sha256: 'askdlfjhasdfj', size: 1},
-      ]));
+      return assertReject(inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: [
+          {sha256: 'askdlfjhasdfj', size: 1},
+        ],
+      }));
     });
   });
 
@@ -257,7 +286,12 @@ describe('S3 Client', () => {
       let sha256 = crypto.createHash('sha256').update('part1').digest('hex');
       let size = 1024;
 
-      let result = await inst.generateSinglepartRequest('example-bucket', 'example-key', sha256, size);
+      let result = await inst.generateSinglepartRequest({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        sha256: sha256,
+        size: size,
+      });
       
       assume(result).has.property('url', `https://example-bucket.s3.amazonaws.com/example-key`);
       assume(result).has.property('method', 'PUT');
@@ -275,34 +309,34 @@ describe('S3 Client', () => {
   it('should not allow parts with size <= 0', () => {
     let {inst} = runner();
 
-    return assertReject(inst.generateSinglepartRequest(
-      'bucket',
-      'key',
-      '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
-      0
-    ));
+    return assertReject(inst.generateSinglepartRequest({
+      bucket: 'bucket',
+      key: 'key',
+      sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+      size: 0,
+    }));
   });
 
   it('should not allow parts with an empty string sha256', () => {
     let {inst} = runner();
 
-    return assertReject(inst.generateSinglepartRequest(
-      'bucket',
-      'key',
-      crypto.createHash('sha256').update('').digest('hex'),
-      1
-    ));
+    return assertReject(inst.generateSinglepartRequest({
+      bucket: 'bucket',
+      key: 'key',
+      sha256: crypto.createHash('sha256').update('').digest('hex'),
+      size: 1,
+    }));
   });
 
   it('should not allow parts with invalid sha256', () => {
     let {inst} = runner();
 
-    return assertReject(inst.generateSinglepartRequest(
-      'bucket',
-      'key',
-      'asdflasdf',
-      1
-    ));
+    return assertReject(inst.generateSinglepartRequest({
+      bucket: 'bucket',
+      key: 'key',
+      sha256: 'asdflasdf',
+      size: 1,
+    }));
   });
 });
 
