@@ -165,10 +165,11 @@ class S3 {
         path: `/${key}?partNumber=${num}&uploadId=${uploadId}`,
         headers: {
           'x-amz-content-sha256': parts[num - 1].sha256,
+          'content-length': parts[num - 1].size,
         }
       });
 
-      requests.push(__this.serializeRequest(signedRequest));
+      requests.push(this.__serializeRequest(signedRequest));
     }
 
     return requests;
@@ -212,6 +213,9 @@ class S3 {
    * Generate the general request for uploading a resource to S3
    * in a single request.
    *
+   * NOTE: We still set the x-amz-meta-taskcluster-content-length because
+   * the multipart uploaded things must have this value set there as well.
+   *
    * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html
    */
   async generateSinglepartRequest(bucket, key, size, sha256) {
@@ -221,7 +225,7 @@ class S3 {
       method: 'PUT',
       protocol: 'https:',
       hostname: `${bucket}.${this.s3host}`,
-      path: `/${key}?uploads=`,
+      path: `/${key}`,
       headers: {
         'content-length': size,
         'x-amz-content-sha256': sha256,
@@ -229,6 +233,8 @@ class S3 {
         'x-amz-meta-taskcluster-content-length': size,
       }
     });
+
+    return this.__serializeRequest(signedRequest);
   }
 }
 
