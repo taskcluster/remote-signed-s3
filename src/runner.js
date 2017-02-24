@@ -147,8 +147,7 @@ class Runner {
 
       if (body) {
         if (typeof body === 'string' || body instanceof Buffer) {
-          requestHash.update(body);
-          requestHash = requestHash.digest('hex');
+          requestHash.update(body).digest('hex');
           requestSize = body.length;
           request.write(body);
           request.end();

@@ -4,30 +4,10 @@ const assume = require('assume');
 const sinon = require('sinon');
 const Runner = require('../lib/runner');
 
+const assertReject = require('./utils').assertReject;
 const run = new Runner().run;
 
 const httpbin = 'https://httpbin.org/';
-
-async function assertThrow(promise) {
-  return new Promise(async (res, rej) => {
-    try {
-      await promise;
-      rej(new Error('Should have thrown'));
-    } catch (err) {
-      res(err);
-    }
-  });
-}
-
-describe('assertThrown', () => {
-  it('rejects for resolved promise', () => {
-    return assertThrow(assertThrow(Promise.resolve()));
-  });
-
-  it('resolves for rejected promise', () => {
-    return assertThrow(Promise.reject());
-  });
-});
 
 describe('Request Runner', () => {
   it('should be able to make a basic call', async () => {
@@ -60,7 +40,7 @@ describe('Request Runner', () => {
   });
 
   it('should throw when a body should not be given', () => {
-    return assertThrow(run({
+    return assertReject(run({
       url: httpbin + 'headers',
       method: 'get',
       headers: {
@@ -71,7 +51,7 @@ describe('Request Runner', () => {
 
   for (let status of [100, 199, 300, 400, 500]) {
     it(`should throw an error with a ${status} HTTP Status Code`, () => {
-      return assertThrow(run({
+      return assertReject(run({
         url: httpbin + status,
         method: 'get',
         headers: {},

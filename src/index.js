@@ -1,5 +1,6 @@
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 
 import _debug from 'debug';
 import aws4 from 'aws4';
@@ -8,6 +9,17 @@ import libxml from 'libxmljs';
 import Runner from './runner';
 
 const debug = _debug('remote-s3:Bucket');
+
+// We want to ensure that any where that we're doign things involving
+// SHA256 Hex digests that they are a valid format
+const emptyStringSha256 = crypto.createHash('sha256').update('').digest('hex');
+function validateSha256 (sha256) {
+  if (sha256 === emptyStringSha256) {
+    throw new Error('SHA256 values must not be of the empty string');
+  } else if (!/^[a-fA-F0-9]{64}$/.test(sha256)) {
+    throw new Error('SHA256 is not a valid format');
+  }
+}
 
 /**
  * This is a reduced scope S3 client which knows how to run the following
@@ -124,6 +136,10 @@ class S3 {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
    */
   async initiateMultipartUpload(bucket, key, sha256, size) {
+    validateSha256(sha256);
+    if (size <= 0) {
+      throw new Error('Objects must be more than 0 bytes');
+    }
     let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
@@ -162,6 +178,13 @@ class S3 {
   async generateMultipartRequest(bucket, key, uploadId, parts) {
     let requests = [];
     for (let num = 1 ; num <= parts.length ; num++) {
+      let part = parts[num - 1];
+
+      validateSha256(part.sha256);
+      if (part.sha256.size <= 0) {
+        throw new Error(`Part ${num} must be more than 0 bytes`);
+      }
+
       let signedRequest = aws4.sign({
         service: 's3',
         region: this.region,
@@ -170,8 +193,8 @@ class S3 {
         hostname: `${bucket}.${this.s3host}`,
         path: `/${key}?partNumber=${num}&uploadId=${uploadId}`,
         headers: {
-          'x-amz-content-sha256': parts[num - 1].sha256,
-          'content-length': parts[num - 1].size,
+          'x-amz-content-sha256': part.sha256,
+          'content-length': part.size,
         }
       });
 
@@ -230,7 +253,11 @@ class S3 {
    *
    * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html
    */
-  async generateSinglepartRequest(bucket, key, size, sha256) {
+  async generateSinglepartRequest(bucket, key, sha256, size) {
+    !validateSha256(sha256);
+    if (size <= 0) {
+      throw new Error('Objects must be more than 0 bytes');
+    }
     let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
