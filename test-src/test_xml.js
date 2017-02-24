@@ -28,26 +28,6 @@ describe('XML Parsing', () => {
 
     let body = [
       '<?xml version="1.0" encoding="UTF-8"?>',
-      '<SomethingElse',
-      'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
-      '   <Bucket>example-bucket</Bucket>',
-      '   <Key>example-object</Key>',
-      '   <UploadId>EXAMPLEJZ6e0YupT2h66iePQCc9IEbYbDUy4RTpMeoSMLPRp8Z5o1u8feSRonpvnWsKKG35tI2LB9VDPiCgTy.Gq2VxQLYjrue4Nq.NBdqI-</UploadId>',
-      '</SomethingElse> ',
-    ].join('\n');
-
-    let doc = parseS3Response(body);
-
-    assume(() => {
-      s3.__getUploadId(doc, 'example-bucket', 'example-object');
-    }).to.throw(/^Document is not an /);
-  });
-
-  it('should only parse initiate multipart upload bodies', () => {
-    let s3 = new S3('us-east-1');
-
-    let body = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
       '<InitiateMultipartUploadResult',
       'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
       '   <Bucket>example-bucket</Bucket>',

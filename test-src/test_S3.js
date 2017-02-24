@@ -153,8 +153,18 @@ describe('S3 Client', () => {
       let body = inst.__generateCompleteUploadBody(etags);
       let bodyHash = crypto.createHash('sha256').update(body).digest('hex');
 
+      let responseBody = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+        '  <Location>http://Example-Bucket.s3.amazonaws.com/Example-Object</Location>',
+        '  <Bucket>example-bucket</Bucket>',
+        '  <Key>example-object</Key>',
+        '  <ETag>"3858f62230ac3c915f300c664312c11f-9"</ETag>',
+        '</CompleteMultipartUploadResult>',
+      ].join('\n');
+
       mock.returns({
-        body: '',
+        body: responseBody,
         headers: {},
         statusCode: 200,
       });
