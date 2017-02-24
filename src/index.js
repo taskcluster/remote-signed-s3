@@ -92,7 +92,10 @@ class S3 {
   }
 
   /**
-   * Obtain an UploadId from an Initiate Multipart Upload response body
+   * General method for extracting a specific property from an S3
+   * response.  This assumes it's a top level node in the main container,
+   * the response has a Bucket and Key property and those match
+   * the passed in ones.  This is a sanity check.
    */
   __getResponseProperty(doc, container, property, bucket, key) {
     if (doc.root().name() !== container) {
@@ -136,12 +139,11 @@ class S3 {
     return this.__getResponseProperty(doc, 'InitiateMultipartUploadResult', 'UploadId', bucket, key);
   }
 
+  /**
+   * Obtain the ETag for the committed multipart upload
+   */
   __getMultipartEtag(doc, bucket, key) {
     return this.__getResponseProperty(doc, 'CompleteMultipartUploadResult', 'ETag', bucket, key);
-  }
-
-  __getSinglepartEtag(doc, bucket, key) {
-
   }
  
   /**

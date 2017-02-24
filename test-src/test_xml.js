@@ -23,6 +23,37 @@ describe('XML Parsing', () => {
     assume(doc.root).to.be.a('function');
   });
 
+  it('should understand general s3 responses', () => {
+    let s3 = new S3('us-east-1');
+    let body = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<container',
+      'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+      '   <Bucket>b</Bucket>',
+      '   <Key>k</Key>',
+      '   <property>lookingfor</property>',
+      '</container> ',
+    ].join('\n');
+
+    let doc = parseS3Response(body);
+
+    assume(s3.__getResponseProperty(doc, 'container', 'property', 'b', 'k')).equals('lookingfor');
+
+    assume(() => {
+      s3.__getResponseProperty(doc, 'container', 'property', 'c', 'k');
+    }).to.throw(/^Document contains incorrect Bucket/)
+
+    assume(() => {
+      s3.__getResponseProperty(doc, 'container', 'property', 'b', 'd');
+    }).to.throw(/^Document contains incorrect Key/)
+
+    assume(() => {
+      s3.__getResponseProperty(doc, 'alskdfj', 'property', 'b', 'd');
+    }).to.throw(/^Document does not have/)
+
+ 
+  });
+
   it('should only parse initiate multipart upload bodies', () => {
     let s3 = new S3('us-east-1');
 
