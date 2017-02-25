@@ -23,7 +23,8 @@ function validateSha256 (sha256) {
 
 /**
  * This is a reduced scope S3 client which knows how to run the following
- * requests:
+ *
+ * Requests:
  *    1. Initiate a multipart upload locally
  *    2. Generate an object describing the URL, Method and Headers that a remote
  *       machine must use to upload an individual part of a multi-part upload
@@ -36,7 +37,7 @@ function validateSha256 (sha256) {
  * the part number.  S3 uses 1-based counting counter to Javascripts 0-based
  * indexing.  This means that PartNumber === JS-Index + 1
  */
-class S3 {
+class Controller {
   constructor(region, runner) {
     this.region = region;
     if (!runner) {
@@ -340,6 +341,6 @@ function parseS3Response(body, noThrow = false) {
 }
 
 module.exports = {
-  S3,
+  Controller,
   parseS3Response
 };
