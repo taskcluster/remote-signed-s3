@@ -21,7 +21,6 @@ describe('Digest Stream', () => {
 
       writestream.on('finish', () => {
         try {
-          check(digeststream);
           let orig = fs.readFileSync(__dirname + '/../package.json');
           let copy = fs.readFileSync(tmpfile);
 

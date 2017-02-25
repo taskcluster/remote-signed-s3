@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const assume = require('assume');
 const sinon = require('sinon');
-const { S3 } = require('../');
+const { Controller } = require('../');
 const assertReject = require('./utils').assertReject;
 
 process.on('unhandledRejection', err => {
@@ -12,7 +12,7 @@ process.on('unhandledRejection', err => {
 function runner () {
   let mock = sinon.mock();
   mock.onSecondCall().throws(new Error('Only call runner once!'));
-  let inst = new S3('us-east-1', {run: mock});
+  let inst = new Controller('us-east-1', {run: mock});
   return {mock, inst};
 }
 
@@ -51,12 +51,12 @@ function checkRunner(mock, opts) {
 describe('S3 Client', () => {
   describe('API Hosts', () => {
     it('should use correct host for us-east-1', () => {
-      let s3 = new S3('us-east-1');
+      let s3 = new Controller('us-east-1');
       assume(s3).has.property('s3host', 's3.amazonaws.com');
     });
 
     it('should use correct host for us-west-1', () => {
-      let s3 = new S3('us-west-1');
+      let s3 = new Controller('us-west-1');
       assume(s3).has.property('s3host', 's3-us-west-1.amazonaws.com');
     });
   });
