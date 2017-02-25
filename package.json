@@ -7,7 +7,8 @@
     "assume": "^1.4.1",
     "aws4": "^1.6.0",
     "joi": "^10.2.2",
-    "libxmljs": "^0.18.4"
+    "libxmljs": "^0.18.4",
+    "mz": "^2.6.0"
   },
   "devDependencies": {
     "assume": "^1.4.1",
