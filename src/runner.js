@@ -124,46 +124,89 @@ class Runner {
           debugResponse(str);
         }
 
-        response.on('error', err => {
-          responseHash = responseHash.digest('hex');
-          showResponse(err);
-          reject(err);
-        });
+        if (streamingOutput) {
+          // In the streaming case, we're going to still want to
+          // log the information about the hash and size and outcome
+          // of the response instead of just silently dropping it.
+          //
+          // That's why we're going to pipe the response through
+          // a DigestStream to calculate the size and hash of the
+          // response.  This can't be part of the resolution value
+          // of the run() promise, since we'll resolve before we
+          // know that.
+          let digestStream = new DigestStream();
+          
+          // We want errors from the https.IncomingMessage instance
+          // to be propogated to streams downstream
+          response.on('error', err => {
+            responseHash = digestStream.hash;
+            responseSize = digestStream.size;
+            showResponse(err);
+            digestStream.emit('error', err);
+          });
 
-        // Maybe pipe the request to a DigestStream?
-        response.on('data', data => {
-          try {
-            responseHash.update(data);
-            responseSize += data.length;
-            responseChunks.push(data);
-          } catch (err) {
-            reject(err);
-          }
-        });
-
-        response.on('end', () => {
-          try {
-            responseHash = responseHash.digest('hex');
-            
+          // We want to be able to handle the other events of the
+          // response
+          response.on('aborted', () => { digestStream.emit('aborted') });
+          response.on('close', () => { digestStream.emit('close') });
+          
+          digestStream.on('end', () => {
+            responseHash = digestStream.hash;
+            responseSize = digestStream.size;
             showResponse();
+          });
 
-            let responseBody = Buffer.concat(responseChunks);
-
-            let output = {
-              body: responseBody,
-              headers: response.headers,
-              statusCode,
-              statusMessage,
-              requestHash,
-              requestSize,
-              responseHash,
-              responseSize
-            };
-            Runner.validateOutput(output).then(resolve, reject);
-          } catch (err) {
+          let output = {
+            bodyStream: response.pipe(digestStream),
+            headers: responseHeaders,
+            statusCode,
+            statusMessage,
+            requestHash,
+            requestSize,
+          };
+          Runner.validateOutput(output).then(resolve, reject);
+        } else {
+          response.on('error', err => {
+            responseHash = responseHash.digest('hex');
+            showResponse(err);
             reject(err);
-          }
-        });
+          });
+
+          // Maybe pipe the request to a DigestStream?
+          response.on('data', data => {
+            try {
+              responseHash.update(data);
+              responseSize += data.length;
+              responseChunks.push(data);
+            } catch (err) {
+              reject(err);
+            }
+          });
+
+          response.on('end', () => {
+            try {
+              responseHash = responseHash.digest('hex');
+              
+              showResponse();
+
+              let responseBody = Buffer.concat(responseChunks);
+
+              let output = {
+                body: responseBody,
+                headers: responseHeaders,
+                statusCode,
+                statusMessage,
+                requestHash,
+                requestSize,
+                responseHash,
+                responseSize
+              };
+              Runner.validateOutput(output).then(resolve, reject);
+            } catch (err) {
+              reject(err);
+            }
+          });
+        }
       });
 
       if (typeof body === 'string' || body instanceof Buffer) {
@@ -183,12 +226,27 @@ class Runner {
         // Readables and functions are in the category of things which we will
         // stream to the request.  In this case, we use Readables directly and
         // call the function synchronusly to obtain a Readable.
-        let bodyStream = typeof body === 'function' ? body() : body;
+        let bodyStream;
+        if (typeof body === 'function') {
+          bodyStream = body();
+        } else {
+          bodyStream = body;
+        }
 
         // We want to find out the hash and size of the request so that we can
         // log it for diagnostics.  This could also be used to ensure that the
         // bytes read from the disk actually match those we sent over the wire
         let digestStream = new DigestStream();
+
+        request.on('error', err => {
+          requestHash = digestStream.hash;
+          requestSize = digestStream.size;
+          reject(err);
+        });
+
+        request.on('aborted', () => {
+          request.emit('error', new Error('Server Hangup'));
+        });
 
         digestStream.on('end', () => {
           requestHash = digestStream.hash;
