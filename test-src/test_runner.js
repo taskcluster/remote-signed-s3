@@ -49,13 +49,15 @@ describe('Request Runner', () => {
     }, 'HA'));
   });
 
-  for (let status of [100, 199, 300, 400, 500]) {
-    it(`should throw an error with a ${status} HTTP Status Code`, () => {
-      return assertReject(run({
-        url: httpbin + status,
+  for (let status of [200, 299, 300, 400, 500]) {
+    it(`should return a ${status} HTTP Status Code correctly`, async () => {
+      let result = await run({
+        url: httpbin + 'status/' + status,
         method: 'get',
         headers: {},
-      }));
+      });
+
+      assume(result).has.property('statusCode', status);
     });
 
   }
@@ -69,6 +71,19 @@ describe('Request Runner', () => {
           key: 'value',
         },
       }, 'abody' + method);
+      
+      let body = JSON.parse(result.body);
+      assume(body).has.property('data', 'abody' + method);
+    });
+    
+    it(`should be able to ${method} data from a Buffer body`, async () => {
+      let result = await run({
+        url: httpbin + method,
+        method: method,
+        headers: {
+          key: 'value',
+        },
+      }, Buffer.from('abody' + method));
       
       let body = JSON.parse(result.body);
       assume(body).has.property('data', 'abody' + method);
