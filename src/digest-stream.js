@@ -20,6 +20,7 @@ class DigestStream extends stream.Transform {
 
   _flush(callback) {
     this.hash = this._hash.digest(this._format);
+    this.size = this._size;
     callback();
   }
 }
