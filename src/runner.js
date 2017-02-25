@@ -7,6 +7,8 @@ import _debug from 'debug';
 import DigestStream from './digest-stream';
 
 const debug = _debug('remote-s3:Runner');
+const debugRequest = _debug('remote-s3:Runner:req');
+const debugResponse = _debug('remote-s3:Runner:res');
 
 /**
  * This class runs General HTTP Requests.  It understands
@@ -58,10 +60,10 @@ class Runner {
     return new Promise((resolve, reject) => {
       // We need to parse the URL for the basis of our request options
       // for the actual HTTP request
-      let requestHash = crypto.createHash('sha256');
-      let requestSize = 0;
       let responseHash = crypto.createHash('sha256');
       let responseSize = 0;
+      let requestHash;
+      let requestSize;
 
       let parts = urllib.parse(url);
       parts.method = method;
@@ -69,6 +71,17 @@ class Runner {
       let request = https.request(parts);
 
       request.on('error', reject);
+
+      request.on('finish', () => {
+        let str = `${method} ${url}`;
+        if (Object.keys(headers).length > 0) {
+          str += ` ${JSON.stringify(headers)}`;
+        }
+        if (requestHash && requestSize > 0) {
+          str += ` ${requestHash} ${requestSize} bytes`;
+        }
+        debugRequest(str);
+      });
 
       request.on('response', response => {
         let statusCode = response.statusCode;
@@ -114,7 +127,7 @@ class Runner {
             }
             
             string = string.join('');
-            debug(string);
+            //debugResponse(string);
 
             resolve({
               body: responseBody,
@@ -135,19 +148,30 @@ class Runner {
 
       if (body) {
         if (typeof body === 'string' || body instanceof Buffer) {
-          requestHash.update(body).digest('hex');
+          requestHash = crypto
+            .createHash('sha256')
+            .update(body)
+            .digest('hex');
+
           requestSize = body.length;
+
           request.write(body);
           request.end();
-        } else if (typeof body.pipe === 'function') {
-          let ds = new DigestStream();
-          ds.on('end', () => {
-            requestHash = ds.hash;
+        } else if (typeof body.pipe === 'function' || typeof body === 'function') {
+          // Remember that the body could be a function which returns a stream.
+          // This is useful in the case of retrying since I'm pretty sure that
+          // node's fs.createReadStream() cannot seek().
+          let bodyStream = typeof body === 'function' ? body() : body;
+          let digestStream = new DigestStream();
+          digestStream.on('end', () => {
+            requestHash = digestStream.hash;
+            requestSize = digestStream.size;
             request.end();
           });
-          body.pipe(ds).pipe(request);
+          bodyStream.pipe(digestStream).pipe(request);
         } 
       } else {
+        requestSize = 0;
         request.end();
       }
 
