@@ -7,13 +7,14 @@ const sinon = require('sinon');
 const Runner = require('../lib/runner');
 
 const assertReject = require('./utils').assertReject;
-const run = new Runner().run;
+
+const runner = new Runner();
 
 const httpbin = 'https://httpbin.org/';
 
 describe('Request Runner', () => {
   it('should be able to make a basic call', async () => {
-    let result = await run({
+    let result = await runner.run({
       req: {
         url: httpbin + 'ip',
         method: 'GET',
@@ -23,7 +24,7 @@ describe('Request Runner', () => {
   });
   
   it('should work with a lower case method', async () => {
-    let result = await run({
+    let result = await runner.run({
       req: {
         url: httpbin + 'ip',
         method: 'get',
@@ -33,7 +34,7 @@ describe('Request Runner', () => {
   });
 
   it('should send headers correctly', async () => {
-    let result = await run({
+    let result = await runner.run({
       req: {
         url: httpbin + 'headers',
         method: 'get',
@@ -48,7 +49,7 @@ describe('Request Runner', () => {
   });
 
   it('should throw when a body should not be given', () => {
-    return assertReject(run({
+    return assertReject(runner.run({
       url: httpbin + 'headers',
       method: 'get',
       headers: {
@@ -59,7 +60,7 @@ describe('Request Runner', () => {
 
   for (let status of [200, 299, 300, 400, 500]) {
     it(`should return a ${status} HTTP Status Code correctly`, async () => {
-      let result = await run({
+      let result = await runner.run({
         req: {
           url: httpbin + 'status/' + status,
           method: 'get',
@@ -74,7 +75,7 @@ describe('Request Runner', () => {
 
   for (let method of ['post', 'put']) {
     it(`should be able to ${method} data from a string body`, async () => {
-      let result = await run({
+      let result = await runner.run({
         req: {
           url: httpbin + method,
           method: method,
@@ -90,7 +91,7 @@ describe('Request Runner', () => {
     });
     
     it(`should be able to ${method} data from a Buffer body`, async () => {
-      let result = await run({
+      let result = await runner.run({
         req: {
           url: httpbin + method,
           method: method,
@@ -106,7 +107,7 @@ describe('Request Runner', () => {
     });
 
     it(`should be able to ${method} data from a streaming body passed in`, async () => {
-      let result = await run({
+      let result = await runner.run({
         req: {
           url: httpbin + method,
           method: method,
@@ -128,7 +129,7 @@ describe('Request Runner', () => {
         return fs.createReadStream(__dirname + '/../package.json');
       };
 
-      let result = await run({
+      let result = await runner.run({
         req: {
           url: httpbin + method,
           method: method,
@@ -147,7 +148,7 @@ describe('Request Runner', () => {
   }
 
   it('should be able to stream a response body', async () => {
-    let result = await run({
+    let result = await runner.run({
       req: {
         url: httpbin + 'stream-bytes/10?seed=1234&chunk_size=1',
         method: 'get',
