@@ -31,6 +31,10 @@ class Runner {
     this.agent = agent || new https.Agent(agentOpts || {}); 
   }
 
+  async run(opts) {
+    return this.runOnce(opts);
+  }
+
   /**
    * Run a request exactly one time.  This means that we should
    * not do any retries.  This method takes a requst which
@@ -42,7 +46,7 @@ class Runner {
    *   4. `() => Readable` function -- called without args to obtain
    *      a Readable
    */
-  async run(opts) {
+  async runOnce(opts) {
     let {req, body, streamingOutput} = opts;
 
     await InterchangeFormat.validate(req);
