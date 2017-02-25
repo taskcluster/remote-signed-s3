@@ -176,7 +176,9 @@ class Controller {
     });
 
 
-    let response = await this.runner(await this.__serializeRequest(signedRequest));
+    let response = await this.runner({
+      req: await this.__serializeRequest(signedRequest)
+    });
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
@@ -245,7 +247,10 @@ class Controller {
       body: requestBody,
     });
 
-    let response = await this.runner(await this.__serializeRequest(signedRequest), requestBody);
+    let response = await this.runner({
+      req: await this.__serializeRequest(signedRequest),
+      body: requestBody,
+    });
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
@@ -264,7 +269,9 @@ class Controller {
       path: `/${key}?uploads=`,
     });
 
-    let response = await this.runner(await this.__serializeRequest(signedRequest));
+    let response = await this.runner({
+      req: await this.__serializeRequest(signedRequest),
+    });
     if (response.statusCode !== 204) {
       throw new Error('Expected HTTP Status Code 204, got: ' + response.statusCode);
     }

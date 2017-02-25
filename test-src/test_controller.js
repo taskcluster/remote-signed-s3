@@ -3,6 +3,7 @@ const assume = require('assume');
 const sinon = require('sinon');
 const { Controller } = require('../');
 const assertReject = require('./utils').assertReject;
+const InterchangeFormat = require('../lib/interchange-format');
 
 process.on('unhandledRejection', err => {
   console.log(err);
@@ -16,7 +17,7 @@ function runner () {
   return {mock, inst};
 }
 
-function checkRunner(mock, opts) {
+async function checkRunner(mock, opts) {
   let url = opts.url;
   let method = opts.method;
   // A list of keys that *must* be there
@@ -25,24 +26,25 @@ function checkRunner(mock, opts) {
   // is either the string value or .test()'s true for regexp
   let headerValues = opts.headerValues || {};
 
-  let obj = mock.firstCall.args[0];
-  let body = mock.firstCall.args[1];
+  assume(mock.firstCall.args).to.have.lengthOf(1);
+  let options = mock.firstCall.args[0];
+  let body = options.body;
+  let req = options.req;
+  let streamingOutput = options.streaming;
 
   if (typeof opts.body !== 'undefined') {
-    assume(mock.firstCall.args).to.have.lengthOf(2);
     assume(opts.body).equals(body);
-  } else {
-    assume(mock.firstCall.args).to.have.lengthOf(1);
   }
 
-  assume(obj).has.property('url', obj.url);
-  assume(obj).has.property('method', opts.method);
+  await InterchangeFormat.validate(req);
+
+  assume(req).to.be.an('object');
 
   for (let key of headerKeys) {
-    assume(obj.headers).has.property(key);
+    assume(req.headers).has.property(key);
   }
   for (let key in headerValues) {
-    assume(obj.headers).has.property(key, headerValues[key]);
+    assume(req.headers).has.property(key, headerValues[key]);
   }
 
   assume(mock.calledOnce).to.be.true;
@@ -94,7 +96,7 @@ describe('S3 Client', () => {
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
-      checkRunner(mock, {
+      await checkRunner(mock, {
         url: 'https://example-bucket.s3.amazonaws.com/example-object?uploads=',
         method: 'POST',
         headerKeys: ['X-Amz-Date', 'Authorization'],
@@ -178,7 +180,7 @@ describe('S3 Client', () => {
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
-      checkRunner(mock, {
+      await checkRunner(mock, {
         url: 'https://example-bucket.s3.amazonaws.com/example-object?uploadId=myuploadid',
         method: 'POST',
         headerKeys: ['X-Amz-Date', 'Authorization'],
@@ -209,7 +211,7 @@ describe('S3 Client', () => {
 
       // Note that since we're not sending a content body, we're always going to check that
       // the x-amz-content-sha256 value is the sha256 of the empty string
-      checkRunner(mock, {
+      await checkRunner(mock, {
         url: 'https://example-bucket.s3.amazonaws.com/example-object?uploadId=myuploadid',
         method: 'DELETE',
         headerKeys: ['X-Amz-Date', 'Authorization'],

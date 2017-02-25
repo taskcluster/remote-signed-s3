@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import https from 'https';
 import urllib from 'url';
+import stream from 'stream';
 
 import _debug from 'debug';
 import Joi from 'joi';
@@ -41,8 +42,11 @@ class Runner {
    *   4. `() => Readable` function -- called without args to obtain
    *      a Readable
    */
-  async run(req, body) {
+  async run(opts) {
+    let {req, body, streamingOutput} = opts;
+
     await InterchangeFormat.validate(req);
+
     let {url, method, headers} = req;
 
     method = method.toUpperCase();
@@ -200,14 +204,18 @@ class Runner {
 
 Runner.returnSchema = Joi.object().keys({
   body: Joi.object().type(Buffer),
+  bodyStream: Joi.object().type(stream.Readable),
   headers: Joi.object().required(),
-  statusCode: Joi.number().integer().min(100).max(599),
-  statusMessage: Joi.string(),
-  requestHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/),
-  requestSize: Joi.number().integer().min(0),
+  statusCode: Joi.number().integer().min(100).max(599).required(),
+  statusMessage: Joi.string().required(),
+  requestHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/).required(),
+  requestSize: Joi.number().integer().min(0).required(),
   responseHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/),
   responseSize: Joi.number().integer().min(0),
-});
+})
+  .without('bodyStream', ['responseHash', 'responseSize', 'body'])
+  .without('body', ['bodyStream'])
+  .with('body', ['responseHash', 'responseSize']);
 
 Runner.validateOutput = async function(output) {
   return new Promise((resolve, reject) => {

@@ -12,27 +12,33 @@ const httpbin = 'https://httpbin.org/';
 describe('Request Runner', () => {
   it('should be able to make a basic call', async () => {
     let result = await run({
-      url: httpbin + 'ip',
-      method: 'GET',
-      headers: {},
+      req: {
+        url: httpbin + 'ip',
+        method: 'GET',
+        headers: {},
+      },
     });
   });
   
   it('should work with a lower case method', async () => {
     let result = await run({
-      url: httpbin + 'ip',
-      method: 'get',
-      headers: {},
+      req: {
+        url: httpbin + 'ip',
+        method: 'get',
+        headers: {},
+      },
     });
   });
 
   it('should send headers correctly', async () => {
     let result = await run({
-      url: httpbin + 'headers',
-      method: 'get',
-      headers: {
-        'test-header': 'hi'
-      },
+      req: {
+        url: httpbin + 'headers',
+        method: 'get',
+        headers: {
+          'test-header': 'hi'
+        },
+      }
     });
     result = JSON.parse(result.body);
 
@@ -52,9 +58,11 @@ describe('Request Runner', () => {
   for (let status of [200, 299, 300, 400, 500]) {
     it(`should return a ${status} HTTP Status Code correctly`, async () => {
       let result = await run({
-        url: httpbin + 'status/' + status,
-        method: 'get',
-        headers: {},
+        req: {
+          url: httpbin + 'status/' + status,
+          method: 'get',
+          headers: {},
+        },
       });
 
       assume(result).has.property('statusCode', status);
@@ -65,12 +73,15 @@ describe('Request Runner', () => {
   for (let method of ['post', 'put']) {
     it(`should be able to ${method} data from a string body`, async () => {
       let result = await run({
-        url: httpbin + method,
-        method: method,
-        headers: {
-          key: 'value',
+        req: {
+          url: httpbin + method,
+          method: method,
+          headers: {
+            key: 'value',
+          },
         },
-      }, 'abody' + method);
+        body: 'abody' + method,
+      });
       
       let body = JSON.parse(result.body);
       assume(body).has.property('data', 'abody' + method);
@@ -78,12 +89,15 @@ describe('Request Runner', () => {
     
     it(`should be able to ${method} data from a Buffer body`, async () => {
       let result = await run({
-        url: httpbin + method,
-        method: method,
-        headers: {
-          key: 'value',
+        req: {
+          url: httpbin + method,
+          method: method,
+          headers: {
+            key: 'value',
+          },
         },
-      }, Buffer.from('abody' + method));
+        body: Buffer.from('abody' + method),
+      });
       
       let body = JSON.parse(result.body);
       assume(body).has.property('data', 'abody' + method);
@@ -91,12 +105,16 @@ describe('Request Runner', () => {
   
     it(`should be able to ${method} data from a streaming body`, async () => {
       let result = await run({
-        url: httpbin + method,
-        method: method,
-        headers: {
-          key: 'value',
+        req: {
+          url: httpbin + method,
+          method: method,
+          headers: {
+            key: 'value',
+          },
         },
-      }, fs.createReadStream(__dirname + '/../package.json'));
+        body: fs.createReadStream(__dirname + '/../package.json')
+      });
+
       
       let body = JSON.parse(result.body);
       assume(body).has.property('data',
