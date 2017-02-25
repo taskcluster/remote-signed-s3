@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 const fs = require('fs');
+const stream = require('stream');
 const assume = require('assume');
 const sinon = require('sinon');
+
 const Runner = require('../lib/runner');
 
 const assertReject = require('./utils').assertReject;
@@ -102,8 +104,8 @@ describe('Request Runner', () => {
       let body = JSON.parse(result.body);
       assume(body).has.property('data', 'abody' + method);
     });
-  
-    it(`should be able to ${method} data from a streaming body`, async () => {
+
+    it(`should be able to ${method} data from a streaming body passed in`, async () => {
       let result = await run({
         req: {
           url: httpbin + method,
@@ -119,6 +121,64 @@ describe('Request Runner', () => {
       let body = JSON.parse(result.body);
       assume(body).has.property('data',
         fs.readFileSync(__dirname + '/../package.json').toString());
+    });  
+
+    it(`should be able to ${method} data from a streaming body from function`, async () => {
+      let bodyFactory = () => {
+        return fs.createReadStream(__dirname + '/../package.json');
+      };
+
+      let result = await run({
+        req: {
+          url: httpbin + method,
+          method: method,
+          headers: {
+            key: 'value',
+          },
+        },
+        body: bodyFactory,
+      });
+
+      
+      let body = JSON.parse(result.body);
+      assume(body).has.property('data',
+        fs.readFileSync(__dirname + '/../package.json').toString());
     });
   }
+
+  it('should be able to stream a response body', async () => {
+    let result = await run({
+      req: {
+        url: httpbin + 'stream-bytes/10?seed=1234&chunk_size=1',
+        method: 'get',
+        headers: {},
+      },
+      streamingOutput: true,
+    });
+
+    assume(result).to.be.an('object');
+    assume(result).to.have.property('bodyStream');
+    //assume(result.bodyStream).to.be.an.instanceof(stream.Readable);
+    assume(result).to.not.have.property('body');
+    assume(result).to.have.property('requestHash');
+
+    return new Promise((resolve, reject) => {
+      let chunks = [];
+
+      result.bodyStream.on('error', reject);
+
+      result.bodyStream.on('data', chunk => {
+        chunks.push(chunk);
+      });
+
+      result.bodyStream.on('end', () => {
+        let body = Buffer.concat(chunks);
+        if (body.toString('base64') === '93AB6fCVqxXEPA==') {
+          resolve();
+        } else {
+          reject();
+        }
+      });
+    });
+  });
 });
