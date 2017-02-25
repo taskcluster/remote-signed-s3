@@ -26,8 +26,20 @@ class Runner {
     this.agent = agent || new https.Agent(agentOpts || {}); 
   }
 
-  async run(req, body, noThrow) {
+  /**
+   * Run a request exactly one time.  This means that we should
+   * not do any retries.  This method takes a requst which
+   * is in the standard interchange format of {url, method, header},
+   * a body paramter.  The body parameter can be one of the following:
+   *   1. 'string' primative -- written in a single .write(); call
+   *   2. 'Buffer' object -- written in a single .write(); call
+   *   3. 'Readable' object -- writen as a stream
+   *   4. `() => Readable` function -- called without args to obtain
+   *      a Readable
+   */
+  async run(req, body) {
     let {url, method, headers} = req;
+
     method = method.toUpperCase();
 
     if (body) {
@@ -35,12 +47,15 @@ class Runner {
         throw new Error('It is a violation of HTTP for GET or HEAD to have body');
       }
 
-      if (typeof body !== 'string' && typeof body.pipe !== 'function') {
-        throw new Error('If provided, body must be string or readable stream');
+      if (typeof body !== 'string'
+          && typeof body.pipe !== 'function'
+          && typeof body !== 'function'
+          && ! body instanceof Buffer) {
+        throw new Error('If provided, body must be string, Readable, Buffer or function');
       }
     }
 
-    return new Promise((resolve, _reject) => {
+    return new Promise((resolve, reject) => {
       // We need to parse the URL for the basis of our request options
       // for the actual HTTP request
       let requestHash = crypto.createHash('sha256');
@@ -48,24 +63,10 @@ class Runner {
       let responseHash = crypto.createHash('sha256');
       let responseSize = 0;
 
-      function reject(err) {
-        let string = [
-          'ERROR: ' + err,
-          `${method} ${url}`,
-          `Headers: ${JSON.stringify(headers, null, 2)}`,
-          `Request body ${requestHash} (${requestSize} bytes)`,
-          `Response body ${responseHash} (${responseSize} bytes)`,
-        ].join('\n');
-        debug(string);
-        return _reject(err);
-      }
-
       let parts = urllib.parse(url);
       parts.method = method;
       parts.headers = headers;
       let request = https.request(parts);
-
-
 
       request.on('error', reject);
 
@@ -91,13 +92,11 @@ class Runner {
           responseHash = responseHash.digest('hex');
           try {
             let string = [];
-            let error = false;
 
             if (statusCode >= 200 && statusCode < 300) {
               string.push('SUCCESS: ');
             } else {
               string.push('ERROR: ');
-              error = true;
             }
 
             string.push([`${statusCode} ${statusMsg} ${method} "${url}"`]);
@@ -117,27 +116,16 @@ class Runner {
             string = string.join('');
             debug(string);
 
-            if (error) {
-              let err = new Error('Error running General HTTP Request');
-              err.url = url;
-              err.headers = headers;
-              err.method = method;
-              err.statusCode = statusCode;
-              if (!noThrow) {
-                throw err;
-              }
-            } else {
-              resolve({
-                body: responseBody,
-                headers: response.headers,
-                statusCode,
-                statusMessage: statusMsg,
-                requestHash,
-                requestSize,
-                responseHash,
-                responseSize
-              });
-            }
+            resolve({
+              body: responseBody,
+              headers: response.headers,
+              statusCode,
+              statusMessage: statusMsg,
+              requestHash,
+              requestSize,
+              responseHash,
+              responseSize
+            });
 
           } catch (err) {
             reject(err);
