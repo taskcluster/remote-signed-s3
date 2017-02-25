@@ -24,7 +24,7 @@ describe('XML Parsing', () => {
   });
 
   it('should understand general s3 responses', () => {
-    let s3 = new Controller('us-east-1');
+    let s3 = new Controller({region: 'us-east-1'});
     let body = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<container',
@@ -55,7 +55,7 @@ describe('XML Parsing', () => {
   });
 
   it('should only parse initiate multipart upload bodies', () => {
-    let s3 = new Controller('us-east-1');
+    let s3 = new Controller({region: 'us-east-1'});
 
     let body = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -83,7 +83,7 @@ describe('XML Parsing', () => {
   });
 
   it('should parse an initiate multipart upload body', () => {
-    let s3 = new Controller('us-east-1');
+    let s3 = new Controller({region: 'us-east-1'});
 
     let body = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -137,7 +137,7 @@ describe('XML Parsing', () => {
 
 describe('XML Generation', () => {
   it('should generate valid content', () => {
-    let s3 = new Controller('us-west-1');
+    let s3 = new Controller({region: 'us-east-1'});
 
     let expected = [
       '<?xml version="1.0" encoding="UTF-8"?>',

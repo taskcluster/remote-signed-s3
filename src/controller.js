@@ -39,12 +39,14 @@ function validateSha256 (sha256) {
  * indexing.  This means that PartNumber === JS-Index + 1
  */
 class Controller {
-  constructor(region, runner) {
+  constructor(opts) {
+    let {region, runner} = opts;
+    region = region || 'us-east-1';
     this.region = region;
     if (!runner) {
-      runner = new Runner();
+      runner = new Runner().run;
     }
-    this.runner = runner.run;
+    this.runner = runner;
     // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
     let s3region = region === 'us-east-1' ? 's3' : 's3-' + region;
     this.s3host = `${s3region}.amazonaws.com`;
