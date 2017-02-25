@@ -7,6 +7,7 @@ import aws4 from 'aws4';
 import libxml from 'libxmljs';
 
 import Runner from './runner';
+import InterchangeFormat from './interchange-format';
 
 const debug = _debug('remote-s3:Bucket');
 
@@ -53,12 +54,15 @@ class Controller {
    * general form and return an object in the form:
    *   { url: '...', method: '...', headers: {key: 'value'}}
    */
-  __serializeRequest(req) {
-    return {
+  async __serializeRequest(req) {
+    let serialized = {
       url: `${req.protocol}//${req.hostname}${req.path}`,
       method: req.method,
       headers: req.headers,
     };
+
+    await InterchangeFormat.validate(serialized);
+    return serialized;
   }
 
   /**
@@ -172,7 +176,7 @@ class Controller {
     });
 
 
-    let response = await this.runner(this.__serializeRequest(signedRequest));
+    let response = await this.runner(await this.__serializeRequest(signedRequest));
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
@@ -217,7 +221,7 @@ class Controller {
         }
       });
 
-      requests.push(this.__serializeRequest(signedRequest));
+      requests.push(await this.__serializeRequest(signedRequest));
     }
 
     return requests;
@@ -241,7 +245,7 @@ class Controller {
       body: requestBody,
     });
 
-    let response = await this.runner(this.__serializeRequest(signedRequest), requestBody);
+    let response = await this.runner(await this.__serializeRequest(signedRequest), requestBody);
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
@@ -260,7 +264,7 @@ class Controller {
       path: `/${key}?uploads=`,
     });
 
-    let response = await this.runner(this.__serializeRequest(signedRequest));
+    let response = await this.runner(await this.__serializeRequest(signedRequest));
     if (response.statusCode !== 204) {
       throw new Error('Expected HTTP Status Code 204, got: ' + response.statusCode);
     }
