@@ -69,7 +69,7 @@ class Client {
     opts = opts || {};
     let {filename, partsize} = opts;
     // Ensure we're copying the value and not changing it
-    partsize = (partsize || this.partsize) + 0;
+    partsize = (partsize || this.partsize);
 
     let sha256 = crypto.createHash('sha256');
     let filestats = await fs.stat(filename);
@@ -81,10 +81,10 @@ class Client {
       await new Promise((resolve, reject) => {
         let parthash = crypto.createHash('sha256');
         let start = part * partsize;
-        let end = start + partsize
+        let end = start + partsize - 1;
         let currentPartsize = 0;
 
-        let partstream = fs.createReadStream(filename, {start, end: end - 1});
+        let partstream = fs.createReadStream(filename, {start, end});
 
         partstream.on('error', reject);
 
@@ -96,7 +96,18 @@ class Client {
         });
 
         partstream.on('end', () => {
-          parts.push({sha256: parthash.digest('hex'), size: currentPartsize, start});
+          // All parts other than the last one should have a size no greater than
+          // the partsize requested
+          if (part < partcount - 1) {
+            if (partsize !== currentPartsize) {
+              throw new Error('All parts before last part must be exactly requested size');
+            }
+          } else if (part === partcount - 1) {
+            if (currentPartsize > partsize) {
+              throw new Error('Final part exceeds allowed size');
+            }
+          }
+          parts.push({sha256: parthash.digest('hex'), size: currentPartsize, start, end});
           resolve();
         });
       });
@@ -139,9 +150,9 @@ class Client {
     }
 
     if (multipart) {
-      return this.__prepareMultipartUpload({filename: filename});
+      return this.__prepareMultipartUpload(opts);
     } else {
-      return this.__prepareSinglepartUpload({filename: filename});
+      return this.__prepareSinglepartUpload(opts);
     }
   }
 
@@ -172,7 +183,8 @@ class Client {
       let {sha256, start, size} = parts[n];
       let req = request[n];
       function body() {
-        return fs.createReadStream(filename, {start, end: start + size});
+        let end = start + size - 1;
+        return fs.createReadStream(filename, {start, end});
       };
 
       let result = await this.runner.run({req, body});
