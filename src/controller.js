@@ -46,7 +46,8 @@ class Controller {
     region = region || 'us-east-1';
     this.region = region;
     if (!runner) {
-      runner = new Runner().run;
+      let r = new Runner();
+      runner = r.run.bind(r);
     }
     this.runner = runner;
     // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
@@ -210,15 +211,15 @@ class Controller {
   async generateMultipartRequest(opts) {
     let {bucket, key, uploadId, parts} = opts;
     let requests = [];
-    if (parts.length > 10000) {
-      throw new Error('No more than 10000 parts are allowed');
+    if (parts.length < 1 || parts.length > 10000) {
+      throw new Error('Must have between 1 and 10000 parts');
     }
     for (let num = 1 ; num <= parts.length ; num++) {
       let part = parts[num - 1];
 
       validateSha256(part.sha256);
-      if (part.size <= 5 * 1024 * 1024 && num <= parts.length) {
-        throw new Error(`Part ${num}/${parts.lenght} must be more than 0 bytes`);
+      if (part.size < 5 * 1024 * 1024 && num < parts.length) {
+        throw new Error(`Part ${num}/${parts.length} must be more than 5MB`);
       } else if (part.size > 5 * 1024 * 1024 * 1024) {
         throw new Error(`Part ${num} exceeds 5GB limit`);
       }
@@ -302,8 +303,8 @@ class Controller {
   async generateSinglepartRequest(opts) {
     let {bucket, key, sha256, size} = opts;
     !validateSha256(sha256);
-    if (size <= 0) {
-      throw new Error('Objects must be more than 0 bytes');
+    if (size <= 0 || size > 5 * 1024 * 1024 * 1024) {
+      throw new Error('Objects must be more than 0 bytes and less than 5GB');
     }
     let signedRequest = aws4.sign({
       service: 's3',
