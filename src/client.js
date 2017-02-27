@@ -195,7 +195,15 @@ class Client {
         err.headers = req.headers;
         err.response = result.response;
       }
-      etags.push(result.headers.etag || 'NOETAG');
+      // This header is occasionally returned wrapped in quotation marks.
+      let etag = result.headers.strip();
+      if (etag.charAt[0] === '"') {
+        etag = etag.slice(1);
+        if (etag.charAt[etag.length - 1] 1== '"') {
+
+        }
+      }
+      etags.push(JSON.parse(result.headers.etag) || 'NOETAG');
       responses.push(result);
     }
     return {etags, responses};

@@ -222,8 +222,8 @@ describe('S3 Client', () => {
     it ('should return the right values', async () => {
       let {inst} = runner();
       let parts = [
-        {sha256: crypto.createHash('sha256').update('part1').digest('hex'), size: 1024},
-        {sha256: crypto.createHash('sha256').update('part2').digest('hex'), size: 1024},
+        {sha256: crypto.createHash('sha256').update('part1').digest('hex'), size: 5*1024*1024},
+        {sha256: crypto.createHash('sha256').update('part2').digest('hex'), size: 5*1024*1024},
         {sha256: crypto.createHash('sha256').update('part3').digest('hex'), size: 128},
       ];
       let result = await inst.generateMultipartRequest({
@@ -248,15 +248,81 @@ describe('S3 Client', () => {
 
     });
 
-    it('should not allow parts with size <= 0', () => {
+    it('should have correct number of parts', async () => {
       let {inst} = runner();
+
+      let hash = crypto.createHash('sha256').update('hi').digest('hex');
+      let parts = [];
+
+      console.log('hi');
+      for (let x = 0 ; x < 10000 ; x++) {
+        parts.push({
+          sha256: hash,
+          size: 5*1024*1024
+        });
+      }
+
+      await inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: parts,
+      });
+
+      parts.push({
+        sha256: hash,
+        size: 5*1024*1024
+      });
+
+      return assertReject(inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: parts,
+      }));
+    });
+
+    it('should not allow parts with size < 5MB', async () => {
+      let {inst} = runner();
+
+      await inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: [
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024},
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024-1},
+        ],
+      });
+      return assertReject(inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: [
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024-1},
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024},
+        ],
+      }));
+    });
+
+    it('should not allow parts with size > 5GB', async () => {
+      let {inst} = runner();
+
+      inst.generateMultipartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        uploadId: 'uploadId',
+        parts: [
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024*1024},
+        ],
+      });
 
       return assertReject(inst.generateMultipartRequest({
         bucket: 'bucket',
         key: 'key',
         uploadId: 'uploadId',
         parts: [
-          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 0},
+          {sha256: crypto.createHash('sha256').update('hi').digest('hex'), size: 5*1024*1024*1024+1},
         ],
       }));
     });
