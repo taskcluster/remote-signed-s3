@@ -196,11 +196,13 @@ class Client {
         err.response = result.response;
       }
       // This header is occasionally returned wrapped in quotation marks.
-      let etag = result.headers.strip();
-      if (etag.charAt[0] === '"') {
+      let etag = result.headers.etag.trim();
+      if (etag.charAt(0) === '"') {
         etag = etag.slice(1);
-        if (etag.charAt[etag.length - 1] 1== '"') {
-
+        if (etag.charAt(etag.length - 1) === '"') {
+          etag = etag.slice(etag.length - 1);
+        } else {
+          throw new Error('Mismatched quotation marks around ETag');
         }
       }
       etags.push(JSON.parse(result.headers.etag) || 'NOETAG');
