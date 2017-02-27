@@ -12,10 +12,11 @@ const MAX_S3_CHUNKS = 10000;
 class Client {
 
   constructor(opts) {
-    let {runner, maxConcurrency, minMPSize, chunksize} = opts;
+    let {runner, maxConcurrency, minMPSize, partsize} = opts || {};
     // The maximum number of concurrent requests this Client
     // should run
     this.maxConcurrency = maxConcurrency;
+    this.partsize = (partsize || 200 * 1024 * 1024) + 0;
 
     if (!runner) {
       runner = new Runner();
@@ -33,7 +34,7 @@ class Client {
     let filestats = await fs.stat(filename);
     let sha256 = crypto.createHash('sha256');
     let size = 0;
-    let stream = fs.createReadStream(filename);
+    let stream = fs.createReadStream(filename, {start: 0});
     return new Promise((resolve, reject) => {
       stream.on('error', reject);
 
@@ -44,10 +45,14 @@ class Client {
 
       stream.on('end', async () => {
         let finishedstats = await fs.stat(filename);
-        if (finishedstats.size !== filestats.size) {
+        if (size !== filestats.size) {
+          throw new Error('File has a different number of bytes than was hashed');
+        } else if (finishedstats.size !== filestats.size) {
           reject(new Error('File changed size during preperation'));
         } else if (finishedstats.mtime.getTime() !== filestats.mtime.getTime()){
           reject(new Error('File was modified during preperation'));
+        } else if (finishedstats.ino !== filestats.ino){
+          reject(new Error('File has changed inodes'));
         } else {
           sha256 = sha256.digest('hex');
           resolve({
@@ -61,7 +66,61 @@ class Client {
   }
 
   async __prepareMultipartUpload(opts) {
+    opts = opts || {};
+    let {filename, partsize} = opts;
+    // Ensure we're copying the value and not changing it
+    partsize = (partsize || this.partsize) + 0;
 
+    let sha256 = crypto.createHash('sha256');
+    let filestats = await fs.stat(filename);
+    let size = 0; // the computed size, to check against result of stat();
+    let partcount = Math.ceil(filestats.size / partsize);
+    let parts = [];
+
+    for (let part = 0 ; part < partcount ; part++) {
+      await new Promise((resolve, reject) => {
+        let parthash = crypto.createHash('sha256');
+        let start = part * partsize;
+        let end = start + partsize
+        let currentPartsize = 0;
+
+        let partstream = fs.createReadStream(filename, {start, end: end - 1});
+
+        partstream.on('error', reject);
+
+        partstream.on('data', data => {
+          size += data.length;
+          currentPartsize += data.length;
+          sha256.update(data);
+          parthash.update(data);
+        });
+
+        partstream.on('end', () => {
+          parts.push({sha256: parthash.digest('hex'), size: currentPartsize, start});
+          resolve();
+        });
+      });
+    }
+
+    sha256 = sha256.digest('hex');
+
+    // Now make sure that in the meantime that the file didn't change out from
+    // under us.  It's still possible for a properly motivated person
+    // to reset the mtime and size to what we expect, but these checks
+    // are more about non-intentional mistakes.  We cannot compare hashes before
+    // and after since we're computing the hash 
+    let finishedstats = await fs.stat(filename);
+    if (size !== filestats.size) {
+      throw new Error('File has a different number of bytes than was hashed');
+    } else if (finishedstats.size !== filestats.size) {
+      reject(new Error('File changed size during preperation'));
+    } else if (finishedstats.mtime.getTime() !== filestats.mtime.getTime()){
+      reject(new Error('File was modified during preperation'));
+    } else if (finishedstats.ino !== filestats.ino){
+      reject(new Error('File has changed inodes'));
+    } else {
+      return {filename, sha256, size, parts};
+    }
   }
 
   __determineUploadType(size, forceMP, forceSP) {
@@ -80,7 +139,7 @@ class Client {
     }
 
     if (multipart) {
-      throw new Error('lala');
+      return this.__prepareMultipartUpload({filename: filename});
     } else {
       return this.__prepareSinglepartUpload({filename: filename});
     }
@@ -105,7 +164,9 @@ class Client {
       parts = [{sha256, size, start: 0}];
     }
 
-    assert(request.length === parts.length);
+    if (request.length !== parts.length) {
+      throw new Error('Number of requests does not match number of parts');
+    }
 
     for (let n = 0; n < request.length ; n++) {
       let {sha256, start, size} = parts[n];
@@ -121,6 +182,7 @@ class Client {
     return {etags, responses};
   }
 
+  /*
   // Take a filename and determine the information about the file
   // stored there.  This includes the overall SHA256 sum and if requested the 
   // SHA256 of each chunk of the file
@@ -128,10 +190,10 @@ class Client {
   // The assumption is that this file is not modified during the execution of
   // this file
   async  fileInformation(options) {
-    assert(typeof options.chunksize === 'number');
+    assert(typeof options.partsize === 'number');
     assert(typeof options.filename === 'string');
-    // The requested chunksize
-    let chunksize = options.chunksize;
+    // The requested partsize
+    let partsize = options.partsize;
     let filename = options.filename;
 
     // Information that we will figure out
@@ -144,16 +206,16 @@ class Client {
     let overallSha256 = crypto.createHash('sha256');
     let chunkInfo = [];
 
-    let chunks = Math.ceil(size / chunksize);
-    assert(chunks <= MAX_S3_CHUNKS, 'Too many chunks, try larger chunksize');
+    let chunks = Math.ceil(size / partsize);
+    assert(chunks <= MAX_S3_CHUNKS, 'Too many chunks, try larger partsize');
 
     for (let chunk = 0 ; chunk < chunks ; chunk++) {
       await new Promise((resolve, reject) => {
         let chunkSha256 = crypto.createHash('sha256');
         let cSize = 0;
 
-        let chunkStart = chunk * chunksize;
-        let chunkEnd = chunkStart + (chunksize - 1);
+        let chunkStart = chunk * partsize;
+        let chunkEnd = chunkStart + (partsize - 1);
 
         let chunkStream = fs.createReadStream(filename, {
           start: chunkStart,
@@ -202,6 +264,7 @@ class Client {
       chunks: chunkInfo,
     };
   }
+  */
 
 }
 

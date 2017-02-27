@@ -22,7 +22,6 @@ describe('Client', () => {
     let client = new Client();
 
     it('should pick multipart for a small file', () => {
-      //assume(client.__determineUploadType(1)).eql(Client.prototype.__prepareSinglepartUpload);
     });
   });
 
@@ -31,11 +30,13 @@ describe('Client', () => {
     beforeEach(() => {
       client = new Client({
         forceSP: true,
+        partsize: 250,
       });
     });
 
     it('should be able prepare upload', async () => {
       let info = await client.__prepareSinglepartUpload({
+        forceSP: true,
         filename: samplefile,
       });
       assume(info).has.property('filename', samplefile);
@@ -45,6 +46,7 @@ describe('Client', () => {
 
     it('should run an upload', async () => {
       let info = await client.prepareUpload({
+        forceSP: true,
         filename: samplefile,
       });
 
@@ -60,7 +62,64 @@ describe('Client', () => {
       assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
       assume(actual.data).has.property('length', samplesize);
       assume(actual.headers).has.property('Sha256', samplehash);
-      console.dir(actual);
+    });
+  });
+
+  describe('Multiple Part Uploads', () => {
+    let client;
+    beforeEach(() => {
+      client = new Client({
+        forceMP: true,
+      });
+    });
+
+    it('should be able prepare upload', async () => {
+      let info = await client.__prepareMultipartUpload({
+        forceMP: true,
+        filename: samplefile,
+      });
+      assume(info).has.property('filename', samplefile);
+      assume(info).has.property('sha256', samplehash);
+      assume(info).has.property('size');
+      assume(info).has.property('parts');
+      assume(info.parts).to.be.instanceof(Array);
+      for (let part of info.parts) {
+        assume(part).has.property('sha256');
+        assume(part).has.property('size');
+        assume(part).has.property('start');
+      }
+    });
+
+    it('should run an upload', async () => {
+      let info = await client.prepareUpload({
+        filename: samplefile,
+        forceMP: true,
+      });
+      console.dir(info);
+
+      let pn = 0;
+      let requests = info.parts.map(part => {
+        pn++;
+        return {
+          url: httpbin + 'post',
+          method: 'post',
+          headers: {
+            sha256: info.sha256,
+            partSha256: part.sha256,
+            partNumber: pn,
+          }
+        }
+      });
+
+      let actual = await client.runUpload(requests, info);
+
+      assume(actual.etags).deeply.equals(['NOETAG']);
+      assume(actual.responses).has.lengthOf(1);
+      actual = JSON.parse(actual.responses[0].body);
+      assume(actual.json).deeply.equals(require('../package.json'));
+      assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
+      assume(actual.data).has.property('length', samplesize);
+      assume(actual.headers).has.property('Sha256', samplehash);
     });
   });
 });
