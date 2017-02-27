@@ -40,7 +40,7 @@ function validateSha256 (sha256) {
  */
 class Controller {
   constructor(opts) {
-    let {region, runner} = opts;
+    let {region, runner} = opts || {};
     region = region || 'us-east-1';
     this.region = region;
     if (!runner) {
