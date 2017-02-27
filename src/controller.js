@@ -22,6 +22,8 @@ function validateSha256 (sha256) {
   }
 }
 
+// http://docs.aws.amazon.com/AmazonS3/latest/dev/qfacts.html
+
 /**
  * This is a reduced scope S3 client which knows how to run the following
  *
@@ -162,7 +164,11 @@ class Controller {
     let {bucket, key, sha256, size} = opts;
     validateSha256(sha256);
     if (size <= 0) {
+      // Each part must have a non-zero size
       throw new Error('Objects must be more than 0 bytes');
+    } else if (size > 5 * 1024 * 1024 * 1024 * 1024) {
+      // The entire file must be lower than 5 TB
+      throw new Error('Object must total fewer than 5 TB'); 
     }
     let signedRequest = aws4.sign({
       service: 's3',
@@ -204,12 +210,17 @@ class Controller {
   async generateMultipartRequest(opts) {
     let {bucket, key, uploadId, parts} = opts;
     let requests = [];
+    if (parts.length > 10000) {
+      throw new Error('No more than 10000 parts are allowed');
+    }
     for (let num = 1 ; num <= parts.length ; num++) {
       let part = parts[num - 1];
 
       validateSha256(part.sha256);
-      if (part.size <= 0) {
-        throw new Error(`Part ${num} must be more than 0 bytes`);
+      if (part.size <= 5 * 1024 * 1024 && num <= parts.length) {
+        throw new Error(`Part ${num}/${parts.lenght} must be more than 0 bytes`);
+      } else if (part.size > 5 * 1024 * 1024 * 1024) {
+        throw new Error(`Part ${num} exceeds 5GB limit`);
       }
 
       let signedRequest = aws4.sign({

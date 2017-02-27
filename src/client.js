@@ -188,6 +188,13 @@ class Client {
       };
 
       let result = await this.runner.run({req, body});
+      if (result.statusCode >= 300) {
+        let err = new Error(`Failed to run a request ${req.method} ${req.url}`);
+        err.url = req.url;
+        err.method = req.method;
+        err.headers = req.headers;
+        err.response = result.response;
+      }
       etags.push(result.headers.etag || 'NOETAG');
       responses.push(result);
     }
