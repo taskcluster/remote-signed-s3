@@ -94,6 +94,7 @@ describe('Client', () => {
       let info = await client.prepareUpload({
         filename: samplefile,
         forceMP: true,
+        partsize: 250,
       });
       console.dir(info);
 
@@ -113,13 +114,37 @@ describe('Client', () => {
 
       let actual = await client.runUpload(requests, info);
 
-      assume(actual.etags).deeply.equals(['NOETAG']);
-      assume(actual.responses).has.lengthOf(1);
-      actual = JSON.parse(actual.responses[0].body);
-      assume(actual.json).deeply.equals(require('../package.json'));
-      assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
-      assume(actual.data).has.property('length', samplesize);
-      assume(actual.headers).has.property('Sha256', samplehash);
+      let expectedEtags = [];
+
+      for (let x = 0 ; x < samplesize ; x += 250) {
+        expectedEtags.push('NOETAG');
+      }
+
+      assume(actual.etags).deeply.equals(expectedEtags);
+      assume(actual.responses).has.lengthOf(expectedEtags.length);
+
+      let fullBody = [];
+      pn = 0;
+      for (let response of actual.responses) {
+        let responseData = JSON.parse(response.body);
+        fullBody.push(responseData.data);
+        assume(responseData.headers).has.property('Sha256', info.sha256);
+        let partsize = Number.parseInt(responseData.headers['Content-Length']);
+        assume(partsize).to.be.at.most(250);
+        assume(responseData.headers)
+          .has.property('Content-Length', info.parts[pn].size + '');
+        assume(responseData.headers)
+          .has.property('Partsha256', info.parts[pn].sha256);
+        pn++;
+        //now check for part number
+        assume(responseData.headers).has.property('Partnumber', pn + '');
+      }
+
+      fullBody = fullBody.join('');
+      assume(fullBody.length).equals(samplesize);
+      let expectedBody = fs.readFileSync(__dirname + '/../package.json').toString();
+      assume(fullBody).equals(expectedBody);
+
     });
   });
 });
