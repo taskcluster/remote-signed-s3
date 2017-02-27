@@ -58,7 +58,7 @@ describe('Client', () => {
       assume(actual.etags).deeply.equals(['NOETAG']);
       assume(actual.responses).has.lengthOf(1);
       actual = JSON.parse(actual.responses[0].body);
-      assume(actual.json).deeply.equals(require('../package.json'));
+      assume(actual.data).deeply.equals(fs.readFileSync(samplefile).toString());
       assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
       assume(actual.data).has.property('length', samplesize);
       assume(actual.headers).has.property('Sha256', samplehash);
@@ -140,9 +140,12 @@ describe('Client', () => {
         assume(responseData.headers).has.property('Partnumber', pn + '');
       }
 
+      console.dir(requests);
+      console.dir(actual);
+
       fullBody = fullBody.join('');
       assume(fullBody.length).equals(samplesize);
-      let expectedBody = fs.readFileSync(__dirname + '/../package.json').toString();
+      let expectedBody = fs.readFileSync(samplefile).toString();
       assume(fullBody).equals(expectedBody);
 
     });
