@@ -132,6 +132,8 @@ describe('XML Parsing', () => {
   // this is just the standard error parsing but checking for
   // a couple extra properties it's not critical
   it.skip('should parse an invalid signature S3 error correctly', () => {
+    let example'<Error><Code>SignatureDoesNotMatch</Code><Message>msg</Message><AWSAccessKeyId>key</AWSAccessKeyId><StringToSign>stringtosign</StringToSign><SignatureProvided>signatureprovided</SignatureProvided><StringToSignBytes>num pairs split by spaces</StringToSignBytes><CanonicalRequest>canonicalrequest</CanonicalRequest><CanonicalRequestBytes>num pairs split by spaces</CanonicalRequestBytes><RequestId>9F15C857BFE0F2EE</RequestId><HostId>hSoPfVamkzTDU/sTNF6pjiXV98hcXfHKMT9NdfmhxnOgWLkAkhjytVhd4TRkJgiRPRvASVjAX3w=</HostId></Error>'
+
   });
 });
 

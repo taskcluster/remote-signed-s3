@@ -83,10 +83,11 @@ class Runner {
       let parts = urllib.parse(url);
       parts.method = method;
       parts.headers = headers;
+      debugRequest(`STARTING: ${method} ${url}`);
       let request = https.request(parts);
 
       function showRequest(err) {
-        let str = `${method} ${url}`;
+        let str = `COMPLETE: ${method} ${url}`;
         if (Object.keys(headers).length > 0) {
           str += ` ${JSON.stringify(headers)}`;
         }
@@ -112,10 +113,9 @@ class Runner {
         let statusCode = response.statusCode;
         let statusMessage = response.statusMessage;
         let responseHeaders = response.headers;
-        let responseChunks = [];
 
         function showResponse(err) {
-          let str = `${statusCode} ${statusMessage} ${url}`;
+          let str = `RECEIVED ${statusCode} ${statusMessage} ${url}`;
           if (Object.keys(responseHeaders).length > 0) {
             str += ` ${JSON.stringify(responseHeaders)}`;
           }
@@ -170,6 +170,8 @@ class Runner {
           };
           Runner.validateOutput(output).then(resolve, reject);
         } else {
+          let responseChunks = [];
+
           response.on('error', err => {
             responseHash = responseHash.digest('hex');
             showResponse(err);
@@ -193,7 +195,10 @@ class Runner {
               
               showResponse();
 
-              let responseBody = Buffer.concat(responseChunks);
+              let responseBody = '';
+              if (responseChunks.length > 0){
+                responseBody = Buffer.concat(responseChunks);
+              }
 
               let output = {
                 body: responseBody,
