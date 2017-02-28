@@ -32,6 +32,17 @@ async function checkRunner(mock, opts) {
     assume(opts.body).equals(body);
   }
 
+  if (body) {
+    let bodysha256 = crypto.createHash('sha256').update(body).digest('hex');
+    if (req.headers['x-amz-content-sha256']) {
+      assume(req.headers['x-amz-content-sha256']).equals(bodysha256);
+    } else if (req.headers['X-Amz-Content-Sha256']) {
+      assume(req.headers['X-Amz-Content-Sha256']).equals(bodysha256);
+    } else {
+      throw new Error('You have a body without a content sha256');
+    }
+  }
+
   await InterchangeFormat.validate(req);
 
   assume(req).to.be.an('object');

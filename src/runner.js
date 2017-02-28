@@ -195,10 +195,7 @@ class Runner {
               
               showResponse();
 
-              let responseBody = '';
-              if (responseChunks.length > 0){
-                responseBody = Buffer.concat(responseChunks);
-              }
+              let responseBody = Buffer.concat(responseChunks);
 
               let output = {
                 body: responseBody,
