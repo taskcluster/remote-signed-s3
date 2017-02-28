@@ -95,6 +95,12 @@ class Runner {
         });
 
         digestStream.on('end', () => {
+          let debugStr = `COMPLETE ${method} ${url}`;
+          if (request.headers) {
+            debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+          }
+          debugStr += ` ${digestStream.hash} ${digestStream.size} bytes`;
+          debugRequest(debugStr);
           request.end();
         });
 
@@ -108,23 +114,41 @@ class Runner {
 
     async function inMemoryRequest(request, body, reponseHandler) {
       return new Promise((resolve, reject) => {
-        let requestHash = crypto.createHash('sha256').update(body).digest('hex');
+        let requestHash = crypto.createHash('sha256').update(body);
         let requestSize = body.length;
 
         request.on('response', response => {
           resolve(responseHandler(response));
         });
 
+        let debugStr = `COMPLETE ${method} ${url}`;
+        if (request.headers) {
+          debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+        }
+
         if (body) {
           request.write(body);
+          debugStr += ` ${requestHash.digest('hex')} ${body.length} bytes`;
         }
+
+        debugRequest(debugStr);
+
         request.end();
       });
     }
 
     async function streamingResponse(response) {
       return new Promise((resolve, reject) => {
-        response.on('error', reject);
+
+        let debugStr = `RESPONSE (streaming) ${response.statusCode} `
+        debugStr += `${response.statusMessage} ${method} ${url}`;
+        if (headers) {
+          debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+        }
+        // Rather than piping this though a DigestStream, for now, I'd like to
+        // just let the downstream consumer do any hashing it chooses to
+        //debugStr += ` ${responseHash.digest('hex')} ${body.length} bytes`;
+        debugResponse(debugStr);
 
         let headers = response.headers;
         let statusCode = response.statusCode;
@@ -142,9 +166,11 @@ class Runner {
     async function inMemoryResponse(response) {
       return new Promise((resolve, reject) => {
         let responseData = [];
+        let responseHash = crypto.createHash('sha256').update('');
 
         response.on('data', data => {
           responseData.push(data);
+          responseHash.update(data);
         });
 
         response.on('end', () => {
@@ -153,6 +179,14 @@ class Runner {
             let headers = response.headers;
             let statusCode = response.statusCode;
             let statusMessage = response.statusMessage;
+
+            let debugStr = `RESPONSE ${statusCode} ${statusMessage} ${method} ${url}`;
+            if (headers) {
+              debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+            }
+            debugStr += ` ${responseHash.digest('hex')} ${body.length} bytes`;
+            debugResponse(debugStr);
+
             resolve({body, headers, statusCode, statusMessage});
           } catch (err) {
             reject(err);
@@ -169,6 +203,13 @@ class Runner {
 
     let request = https.request(_request);
 
+    let debugStr = `REQUESTED ${method} ${url}`;
+
+    if (request.headers) {
+      debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+    }
+
+    debugRequest(debugStr);
     request.on('aborted', () => {
       request.emit('error', new Error('Server Hangup'));
     });
@@ -186,10 +227,6 @@ Runner.returnSchema = Joi.object().keys({
   headers: Joi.object().required(),
   statusCode: Joi.number().integer().min(100).max(599).required(),
   statusMessage: Joi.string().required(),
-  //requestHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/).required(),
-  //requestSize: Joi.number().integer().min(0).required(),
-  //responseHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/),
-  //responseSize: Joi.number().integer().min(0),
 })
   .without('bodyStream', ['responseHash', 'responseSize', 'body'])
   .without('body', ['bodyStream'])

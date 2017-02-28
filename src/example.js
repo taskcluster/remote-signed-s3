@@ -31,6 +31,7 @@ class ServerAPI {
     this.key = undefined;
     this.bucket = undefined;
     this.uploadId = undefined;
+    this.parts = undefined;
     // NOTE: It's important to remember that while the tags are set for single
     // part uploads during the creation, the tags sent with the createArtifact
     // method need to be saved in state for use when running the
@@ -44,6 +45,9 @@ class ServerAPI {
     this.bucket = process.env.S3_BUCKET || 'example-remote-s3';
     this.key = path.basename(opts.filename);
     this.tags = opts.tags || {};
+    this.parts = opts.parts;
+    this.uploadId = undefined;
+
     if (opts.parts) {
       this.uploadId = await this.controller.initiateMultipartUpload({
         bucket: this.bucket,
@@ -86,16 +90,19 @@ class ServerAPI {
   }
 
   async completeArtifact(etags) {
-    let options = {
-      bucket: this.bucket,
-      key: this.key,
-      uploadId: this.uploadId,
-      etags: etags,
-    };
-    if (this.tags) {
-      options.tags = this.tags;
+    // Only multi-part uploads need to do something specific here
+    if (this.parts) {
+      let options = {
+        bucket: this.bucket,
+        key: this.key,
+        uploadId: this.uploadId,
+        etags: etags,
+      };
+      if (this.tags) {
+        options.tags = this.tags;
+      }
+      await this.controller.completeMultipartUpload(options);
     }
-    await this.controller.completeMultipartUpload(options);
   }
 
   async cancelArtifact(opts) {
@@ -115,13 +122,18 @@ class Worker {
   async uploadFile(filename) {
     let fileinfo;
     let result;
+
+    // Let's figure out the file parts first
     try {
       fileinfo = await this.client.prepareUpload({filename, forceMP: process.env.FORCEMP});
     } catch (err) {
       console.log('Error computing information about file');
       throw err;
     }
+
     let requests = JSON.parse(await this.server.createArtifact(fileinfo));
+
+    // Now let's run the requests that the ServerAPI has given us
     try {
       result = await this.client.runUpload(requests, fileinfo);
     } catch (err) {

@@ -206,14 +206,14 @@ class Client {
       if (result && result.headers && result.headers.etag) {
         // This header is occasionally returned wrapped in quotation marks.
         etag = result.headers.etag.trim();
-        if (etag.charAt(0) === '"') {
+        /*if (etag.charAt(0) === '"') {
           etag = etag.slice(1);
           if (etag.charAt(etag.length - 1) === '"') {
             etag = etag.slice(0, etag.length - 1);
           } else {
             throw new Error('Mismatched quotation marks around ETag');
           }
-        }
+        }*/
       }
 
       // I'm not entirely happy with this.  It's almost completely 

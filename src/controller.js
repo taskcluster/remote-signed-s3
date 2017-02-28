@@ -110,7 +110,7 @@ class Controller {
       ctx = ctx.parent();
     }
 
-    return doc.toString();
+    return doc.toString().toString();
   }
 
   /**
@@ -147,7 +147,7 @@ class Controller {
       ctx = ctx.parent();
     }
 
-    return doc.toString();
+    return doc.toString().trim();
   }
 
   /**
@@ -303,10 +303,13 @@ class Controller {
     let response = await this.runner({
       req: await this.__serializeRequest(signedRequest)
     });
+    
     let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
+
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
+
     return uploadId;
   }
 
@@ -371,11 +374,7 @@ class Controller {
   async __tagObject(opts) {
     let {bucket, key, tags} = opts || {};
     let requestBody = this.__generateTagSetBody(tags);
-    // Oddly, the S3 documentation says that Content-MD5 will be a required
-    // header but not in the table that I've come to expect from EC2.  Since
-    // we're doing V4 request signing, this shouldn't be an issue but since the
-    // docs aren't clear and MD5 is nearly free let's just do it to be safe
-    let contentMD5 = crypto.createHash('md5').update(requestBody).digest('hex');
+
     let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
@@ -383,9 +382,6 @@ class Controller {
       protocol: 'https:',
       hostname: `${bucket}.${this.s3host}`,
       path: `/${key}?tagging=`,
-      headers: {
-        'content-md5': contentMD5,
-      },
       body: requestBody,
     });
 
@@ -408,7 +404,16 @@ class Controller {
    */
   async completeMultipartUpload(opts) {
     let {bucket, key, uploadId, etags, tags} = opts;
+
+    // I'm not sure why, but for some reason the AWS4 library generates the
+    // incorrect SHA256 for *this* and only *this* body.  I have to calculate
+    // the body sha256 myself, or else what happens is that the requestBody
+    // string is hashed with its value and an extra newline character, but then
+    // the data written does not have that newline, and never did.  I suspect
+    // that there's something broken in the aws4 library here
     let requestBody = this.__generateCompleteUploadBody(etags);
+    let requestBodySha256 = crypto.createHash('sha256').update(requestBody);
+
     let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
@@ -416,7 +421,10 @@ class Controller {
       protocol: 'https:',
       hostname: `${bucket}.${this.s3host}`,
       path: `/${key}?uploadId=${uploadId}`,
-      body: requestBody,
+      headers: {
+        'X-Amz-Content-Sha256': requestBodySha256.digest('hex'),
+        'Content-Length': requestBody.length,
+      },
     });
 
     let response = await this.runner({
@@ -518,7 +526,7 @@ class Controller {
  * http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
  */
 function parseS3Response(body, noThrow = false) {
-  if (!body) {
+  if (!body || body.length === 0) {
     return undefined;
   }
 
