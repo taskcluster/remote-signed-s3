@@ -86,22 +86,20 @@ class ServerAPI {
   }
 
   async completeArtifact(etags) {
-    if (etags.length > 1) {
-      let options = {
-        bucket: this.bucket,
-        key: this.key,
-        uploadId: this.uploadId,
-        etags: etags,
-      };
-      if (this.tags) {
-        options.tags = tags;
-      }
-      await this.controller.completeMultipartUpload(options);
+    let options = {
+      bucket: this.bucket,
+      key: this.key,
+      uploadId: this.uploadId,
+      etags: etags,
+    };
+    if (this.tags) {
+      options.tags = this.tags;
     }
+    await this.controller.completeMultipartUpload(options);
   }
 
   async cancelArtifact(opts) {
-
+    
   }
 }
 
@@ -133,6 +131,7 @@ class Worker {
     }
 
     console.log(JSON.stringify(result, null, 2));
+    console.log(result.responses[0].body)
 
     let outcome = await this.server.completeArtifact(result.etags);
   }

@@ -16,7 +16,7 @@ class Client {
     // The maximum number of concurrent requests this Client
     // should run
     this.maxConcurrency = maxConcurrency;
-    this.partsize = (partsize || 200 * 1024 * 1024) + 0;
+    this.partsize = (partsize || 25 * 1024 * 1024) + 0;
 
     if (!runner) {
       runner = new Runner();
@@ -71,12 +71,18 @@ class Client {
     let {filename, partsize} = opts;
     // Ensure we're copying the value and not changing it
     partsize = (partsize || this.partsize);
+    console.log(partsize);
+
 
     let sha256 = crypto.createHash('sha256');
     let filestats = await fs.stat(filename);
     let size = 0; // the computed size, to check against result of stat();
     let partcount = Math.ceil(filestats.size / partsize);
     let parts = [];
+
+    if (partsize/size < 2) {
+      throw new Error('Multipart upload must have at least 2 parts');
+    }
 
     for (let part = 0 ; part < partcount ; part++) {
       await new Promise((resolve, reject) => {
@@ -108,7 +114,7 @@ class Client {
               throw new Error('Final part exceeds allowed size');
             }
           }
-          parts.push({sha256: parthash.digest('hex'), size: currentPartsize, start, end});
+          parts.push({sha256: parthash.digest('hex'), size: currentPartsize, start});
           resolve();
         });
       });

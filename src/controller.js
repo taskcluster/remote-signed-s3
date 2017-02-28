@@ -298,17 +298,15 @@ class Controller {
       }
     }
 
-    console.dir(unsignedRequest);
-
     let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
       req: await this.__serializeRequest(signedRequest)
     });
+    let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
-    let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
     return uploadId;
   }
 
@@ -396,6 +394,8 @@ class Controller {
       body: requestBody,
     });
 
+    parseS3Response(response.body);
+
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
@@ -423,10 +423,12 @@ class Controller {
       req: await this.__serializeRequest(signedRequest),
       body: requestBody,
     });
+
+    let multipartEtag = this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
+
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
-    let multipartEtag = this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
 
     if (tags) {
       await this.__tagObject(opts);
@@ -450,6 +452,9 @@ class Controller {
     let response = await this.runner({
       req: await this.__serializeRequest(signedRequest),
     });
+
+    parseS3Response(response.body);
+
     if (response.statusCode !== 204) {
       throw new Error('Expected HTTP Status Code 204, got: ' + response.statusCode);
     }
@@ -498,8 +503,6 @@ class Controller {
         unsignedRequest.headers[tuple[0]] = tuple[1];
       }
     }
-
-    console.dir(unsignedRequest);
 
     let signedRequest = aws4.sign(unsignedRequest);
 
