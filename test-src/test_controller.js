@@ -254,7 +254,6 @@ describe('S3 Client', () => {
       let hash = crypto.createHash('sha256').update('hi').digest('hex');
       let parts = [];
 
-      console.log('hi');
       for (let x = 0 ; x < 10000 ; x++) {
         parts.push({
           sha256: hash,
@@ -354,6 +353,36 @@ describe('S3 Client', () => {
     });
   });
 
+  describe('Tag an Object', () => {
+    it ('should call run with the correct arguments', async () => {
+      let {mock, inst} = runner();
+
+      let body = inst.__generateTagSetBody({tag1: 'value1'});
+
+      mock.returns({
+        body: body,
+        headers: {},
+        statusCode: 200,
+      });
+
+      await inst.__tagObject({
+        bucket: 'example-bucket',
+        key: 'example-object',
+        tags: {tag1: 'value1'},
+      });
+
+      await checkRunner(mock, {
+        url: 'https://example-bucket.s3.amazonaws.com/example-object?tagging=',
+        method: 'POST',
+        headerKeys: ['X-Amz-Date', 'Authorization'],
+        headerValues: {
+          Host: 'example-bucket.s3.amazonaws.com',
+        }
+      });     
+
+    });
+  });
+    
   describe('Generate Single Part Request', () => {
     it ('should return the right values', async () => {
       let {inst} = runner();
@@ -365,6 +394,13 @@ describe('S3 Client', () => {
         key: 'example-key',
         sha256: sha256,
         size: size,
+        tags: {
+          tag1: 'value1',
+          tag2: 'value2',
+        },
+        permissions: {
+          acl: 'public-read',
+        }
       });
       
       assume(result).has.property('url', `https://example-bucket.s3.amazonaws.com/example-key`);
@@ -377,6 +413,8 @@ describe('S3 Client', () => {
       assume(result.headers).has.property('Host', 'example-bucket.s3.amazonaws.com');
       assume(result.headers).has.property('Authorization');
       assume(result.headers).has.property('X-Amz-Date');
+      assume(result.headers).has.property('x-amz-acl', 'public-read');
+      assume(result.headers).has.property('x-amz-tagging', 'tag1=value1&tag2=value2');
     });
   });
 
@@ -411,6 +449,46 @@ describe('S3 Client', () => {
       sha256: 'asdflasdf',
       size: 1,
     }));
+  });
+
+  describe('S3 Permissions', () => {
+    let {inst} = runner();
+
+    it('should handle a valid Canned ACL', () => {
+      let actual = inst.__determinePermissionsHeaders({acl: 'private'});
+      let expected = [['x-amz-acl', 'private']];
+      assume(actual).deeply.equals(expected);
+    });
+
+    it('should handle an invalid Canned ACL', () => {
+      assume(() => {
+        inst.__determinePermissionsHeaders({acl: 'bogus'});
+      }).throws(/^You are requesting a canned ACL that is not valid/);
+    });
+
+    it('should treat canned ACLs and specific permissions as mutually exclusive', () => {
+      assume(() => {
+        inst.__determinePermissionsHeaders({acl: 'private', read: 'ooogieboogie'});
+      }).throws(/^If you are using a canned ACL, you may not/);
+    });
+
+    it('should handle specific permissions', () => {
+      let permissions = {
+        read: 'x-amz-grant-read',
+        readAcp: 'x-amz-grant-read-acp',
+        write: 'x-amz-grant-write',
+        writeAcp: 'x-amz-grant-write-acp',
+        fullControl: 'x-amz-grant-full-control',
+      };
+
+      let actual = inst.__determinePermissionsHeaders(permissions);
+      
+      for (let tuple of actual) {
+        assume(tuple[0]).equals(tuple[1]);
+      }
+    });
+
+
   });
 });
 

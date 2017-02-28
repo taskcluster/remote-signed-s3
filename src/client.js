@@ -29,6 +29,7 @@ class Client {
     this.minMPSize = minMPSize;
   }
 
+
   async __prepareSinglepartUpload(opts) {
     let {filename} = opts;
     let filestats = await fs.stat(filename);
@@ -195,17 +196,26 @@ class Client {
         err.headers = req.headers;
         err.response = result.response;
       }
-      // This header is occasionally returned wrapped in quotation marks.
-      let etag = result.headers.etag.trim();
-      if (etag.charAt(0) === '"') {
-        etag = etag.slice(1);
-        if (etag.charAt(etag.length - 1) === '"') {
-          etag = etag.slice(etag.length - 1);
-        } else {
-          throw new Error('Mismatched quotation marks around ETag');
+      let etag;
+      if (result && result.headers && result.headers.etag) {
+        // This header is occasionally returned wrapped in quotation marks.
+        etag = result.headers.etag.trim();
+        if (etag.charAt(0) === '"') {
+          etag = etag.slice(1);
+          if (etag.charAt(etag.length - 1) === '"') {
+            etag = etag.slice(etag.length - 1);
+          } else {
+            throw new Error('Mismatched quotation marks around ETag');
+          }
         }
       }
-      etags.push(JSON.parse(result.headers.etag) || 'NOETAG');
+
+      // I'm not entirely happy with this.  It's almost completely 
+      // here for unit tests.  It's not dangerous because a lack of
+      // an ETag will just cause the upload to fail for a multipart
+      // upload because it cannot commit the upload and it is not
+      // important for a single part upload
+      etags.push(etag || 'NOETAG');
       responses.push(result);
     }
     return {etags, responses};
