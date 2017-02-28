@@ -56,6 +56,7 @@ class Runner {
     method = method.toUpperCase();
 
     body = body || '';
+    let streamingInput;
 
     // Some sanity checking done
     if (body) {
@@ -63,206 +64,119 @@ class Runner {
         throw new Error('It is a violation of HTTP for GET or HEAD to have body');
       }
 
-      if (typeof body !== 'string'
-          && typeof body.pipe !== 'function'
-          && typeof body !== 'function'
-          && ! body instanceof Buffer) {
-        throw new Error('If provided, body must be string, Readable, Buffer or function');
+      if (typeof body === 'string' || body instanceof Buffer) {
+        streamingInput = false;
+      } else if (typeof body === 'function') {
+        streamingInput = true;
+        body = body();
+      } else if (typeof body.pipe === 'function') {
+        streamingInput = true;
+      } else {
+        throw new Error('Received an unexpected type of body');
       }
     }
 
-    // Wrap the request in a Promise
-    return new Promise((resolve, reject) => {
-      // We need to parse the URL for the basis of our request options
-      // for the actual HTTP request
-      let responseHash = crypto.createHash('sha256');
-      let responseSize = 0;
-      let requestHash;
-      let requestSize;
-
-      let parts = urllib.parse(url);
-      parts.method = method;
-      parts.headers = headers;
-      debugRequest(`STARTING: ${method} ${url}`);
-      let request = https.request(parts);
-
-      function showRequest(err) {
-        let str = `COMPLETE: ${method} ${url}`;
-        if (Object.keys(headers).length > 0) {
-          str += ` ${JSON.stringify(headers)}`;
-        }
-        if (requestHash && requestSize > 0) {
-          str += ` ${requestHash} ${requestSize} bytes`;
-        }
-        if(err) {
-          str += err;
-        }
-        debugRequest(str);
-      };
-
-      request.on('error', err => {
-        showRequest(err);
-        reject(err);
-      });
-
-      request.on('finish', () => {
-        showRequest();
-      });
-
-      request.on('response', response => {
-        let statusCode = response.statusCode;
-        let statusMessage = response.statusMessage;
-        let responseHeaders = response.headers;
-
-        function showResponse(err) {
-          let str = `RECEIVED ${statusCode} ${statusMessage} ${url}`;
-          if (Object.keys(responseHeaders).length > 0) {
-            str += ` ${JSON.stringify(responseHeaders)}`;
-          }
-          if (responseHash && responseSize > 0) {
-            str += ` ${responseHash} ${responseSize} bytes`;
-          }
-          if(err) {
-            str += err;
-          }
-          debugResponse(str);
-        }
-
-        if (streamingOutput) {
-          // In the streaming case, we're going to still want to
-          // log the information about the hash and size and outcome
-          // of the response instead of just silently dropping it.
-          //
-          // That's why we're going to pipe the response through
-          // a DigestStream to calculate the size and hash of the
-          // response.  This can't be part of the resolution value
-          // of the run() promise, since we'll resolve before we
-          // know that.
-          let digestStream = new DigestStream();
-          
-          // We want errors from the https.IncomingMessage instance
-          // to be propogated to streams downstream
-          response.on('error', err => {
-            responseHash = digestStream.hash;
-            responseSize = digestStream.size;
-            showResponse(err);
-            digestStream.emit('error', err);
-          });
-
-          // We want to be able to handle the other events of the
-          // response
-          response.on('aborted', () => { digestStream.emit('aborted') });
-          response.on('close', () => { digestStream.emit('close') });
-          
-          digestStream.on('end', () => {
-            responseHash = digestStream.hash;
-            responseSize = digestStream.size;
-            showResponse();
-          });
-
-          let output = {
-            bodyStream: response.pipe(digestStream),
-            headers: responseHeaders,
-            statusCode,
-            statusMessage,
-            requestHash,
-            requestSize,
-          };
-          Runner.validateOutput(output).then(resolve, reject);
-        } else {
-          let responseChunks = [];
-
-          response.on('error', err => {
-            responseHash = responseHash.digest('hex');
-            showResponse(err);
-            reject(err);
-          });
-
-          // Maybe pipe the request to a DigestStream?
-          response.on('data', data => {
-            try {
-              responseHash.update(data);
-              responseSize += data.length;
-              responseChunks.push(data);
-            } catch (err) {
-              reject(err);
-            }
-          });
-
-          response.on('end', () => {
-            try {
-              responseHash = responseHash.digest('hex');
-              
-              showResponse();
-
-              let responseBody = Buffer.concat(responseChunks);
-
-              let output = {
-                body: responseBody,
-                headers: responseHeaders,
-                statusCode,
-                statusMessage,
-                requestHash,
-                requestSize,
-                responseHash,
-                responseSize
-              };
-              Runner.validateOutput(output).then(resolve, reject);
-            } catch (err) {
-              reject(err);
-            }
-          });
-        }
-      });
-
-      if (typeof body === 'string' || body instanceof Buffer) {
-        // Strings and Buffers are in the category of things which we just send
-        // and then forget.  We write them in a single chunk since they're
-        // already in memory as that data.
-        requestHash = crypto
-          .createHash('sha256')
-          .update(body)
-          .digest('hex');
-
-        requestSize = body.length;
-
-        request.write(body);
-        request.end();
-      } else if (typeof body.pipe === 'function' || typeof body === 'function') {
-        // Readables and functions are in the category of things which we will
-        // stream to the request.  In this case, we use Readables directly and
-        // call the function synchronusly to obtain a Readable.
-        let bodyStream;
-        if (typeof body === 'function') {
-          bodyStream = body();
-        } else {
-          bodyStream = body;
-        }
-
-        // We want to find out the hash and size of the request so that we can
-        // log it for diagnostics.  This could also be used to ensure that the
-        // bytes read from the disk actually match those we sent over the wire
+    async function streamingRequest(request, body, responseHandler) {
+      return new Promise((resolve, reject) => {
         let digestStream = new DigestStream();
 
-        request.on('error', err => {
-          requestHash = digestStream.hash;
-          requestSize = digestStream.size;
+        request.on('error', reject);
+
+        // We want to make sure that we abort requests for which there
+        // was an error reading the body
+        body.on('error', err => {
+          request.abort();
           reject(err);
         });
 
-        request.on('aborted', () => {
-          request.emit('error', new Error('Server Hangup'));
+        digestStream.on('error', err => {
+          request.abort();
+          reject(err);
         });
 
         digestStream.on('end', () => {
-          requestHash = digestStream.hash;
-          requestSize = digestStream.size;
           request.end();
         });
 
-        bodyStream.pipe(digestStream).pipe(request);
-      } 
+        request.on('response', response => {
+          resolve(responseHandler(response));
+        });
+
+        body.pipe(digestStream).pipe(request);
+      });
+    }
+
+    async function inMemoryRequest(request, body, reponseHandler) {
+      return new Promise((resolve, reject) => {
+        let requestHash = crypto.createHash('sha256').update(body).digest('hex');
+        let requestSize = body.length;
+
+        request.on('response', response => {
+          resolve(responseHandler(response));
+        });
+
+        if (body) {
+          request.write(body);
+        }
+        request.end();
+      });
+    }
+
+    async function streamingResponse(response) {
+      return new Promise((resolve, reject) => {
+        response.on('error', reject);
+
+        let headers = response.headers;
+        let statusCode = response.statusCode;
+        let statusMessage = response.statusMessage;
+
+        resolve({
+          bodyStream: response,
+          headers,
+          statusCode,
+          statusMessage,
+        });
+      });
+    }
+
+    async function inMemoryResponse(response) {
+      return new Promise((resolve, reject) => {
+        let responseData = [];
+
+        response.on('data', data => {
+          responseData.push(data);
+        });
+
+        response.on('end', () => {
+          try {
+            let body = Buffer.concat(responseData);
+            let headers = response.headers;
+            let statusCode = response.statusCode;
+            let statusMessage = response.statusMessage;
+            resolve({body, headers, statusCode, statusMessage});
+          } catch (err) {
+            reject(err);
+          }
+        });
+
+      });
+    }
+
+
+    let _request = urllib.parse(url);
+    _request.method = method;
+    _request.headers = headers;
+
+    let request = https.request(_request);
+
+    request.on('aborted', () => {
+      request.emit('error', new Error('Server Hangup'));
     });
+
+    let requestHandler = streamingInput ? streamingRequest : inMemoryRequest;
+    let responseHandler = streamingOutput ? streamingResponse : inMemoryResponse;
+
+    return requestHandler(request, body, responseHandler);
   }
 }
 
@@ -272,10 +186,10 @@ Runner.returnSchema = Joi.object().keys({
   headers: Joi.object().required(),
   statusCode: Joi.number().integer().min(100).max(599).required(),
   statusMessage: Joi.string().required(),
-  requestHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/).required(),
-  requestSize: Joi.number().integer().min(0).required(),
-  responseHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/),
-  responseSize: Joi.number().integer().min(0),
+  //requestHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/).required(),
+  //requestSize: Joi.number().integer().min(0).required(),
+  //responseHash: Joi.string().regex(/^[a-fA-F0-9]{64}$/),
+  //responseSize: Joi.number().integer().min(0),
 })
   .without('bodyStream', ['responseHash', 'responseSize', 'body'])
   .without('body', ['bodyStream'])
