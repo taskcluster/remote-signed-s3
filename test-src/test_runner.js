@@ -159,9 +159,7 @@ describe('Request Runner', () => {
 
     assume(result).to.be.an('object');
     assume(result).to.have.property('bodyStream');
-    //assume(result.bodyStream).to.be.an.instanceof(stream.Readable);
     assume(result).to.not.have.property('body');
-    assume(result).to.have.property('requestHash');
 
     return new Promise((resolve, reject) => {
       let chunks = [];
