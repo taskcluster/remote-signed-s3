@@ -298,6 +298,8 @@ class Controller {
       }
     }
 
+    console.dir(unsignedRequest);
+
     let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
@@ -427,7 +429,7 @@ class Controller {
     let multipartEtag = this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
 
     if (tags) {
-      throw new Error('This is not yet implemented');
+      await this.__tagObject(opts);
     }
 
     return multipartEtag;
@@ -496,6 +498,8 @@ class Controller {
         unsignedRequest.headers[tuple[0]] = tuple[1];
       }
     }
+
+    console.dir(unsignedRequest);
 
     let signedRequest = aws4.sign(unsignedRequest);
 

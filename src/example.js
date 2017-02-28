@@ -31,15 +31,26 @@ class ServerAPI {
     this.key = undefined;
     this.bucket = undefined;
     this.uploadId = undefined;
+    // NOTE: It's important to remember that while the tags are set for single
+    // part uploads during the creation, the tags sent with the createArtifact
+    // method need to be saved in state for use when running the
+    // completeArtifact method, since multipart uploads set their tags *after*
+    // they're finished
+    // TODO: Verify the above....
+    this.tags = undefined;
   }
 
   async createArtifact(opts) {
     this.bucket = process.env.S3_BUCKET || 'example-remote-s3';
     this.key = path.basename(opts.filename);
+    this.tags = opts.tags || {};
     if (opts.parts) {
       this.uploadId = await this.controller.initiateMultipartUpload({
         bucket: this.bucket,
         key: this.key,
+        permissions: {
+          acl: 'public-read',
+        },
         sha256: opts.sha256,
         size: opts.size,
       });
@@ -61,6 +72,12 @@ class ServerAPI {
         key: this.key,
         sha256: opts.sha256,
         size: opts.size,
+        permissions: {
+          acl: 'public-read',
+        },
+        tags: {
+          owner: 'example.js',
+        },
       });
     }
 
@@ -70,12 +87,16 @@ class ServerAPI {
 
   async completeArtifact(etags) {
     if (etags.length > 1) {
-      await this.controller.completeMultipartUpload({
+      let options = {
         bucket: this.bucket,
         key: this.key,
         uploadId: this.uploadId,
         etags: etags,
-      });
+      };
+      if (this.tags) {
+        options.tags = tags;
+      }
+      await this.controller.completeMultipartUpload(options);
     }
   }
 
@@ -111,7 +132,7 @@ class Worker {
       throw err;
     }
 
-    console.dir(result);
+    console.log(JSON.stringify(result, null, 2));
 
     let outcome = await this.server.completeArtifact(result.etags);
   }

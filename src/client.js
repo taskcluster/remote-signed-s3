@@ -203,7 +203,7 @@ class Client {
         if (etag.charAt(0) === '"') {
           etag = etag.slice(1);
           if (etag.charAt(etag.length - 1) === '"') {
-            etag = etag.slice(etag.length - 1);
+            etag = etag.slice(0, etag.length - 1);
           } else {
             throw new Error('Mismatched quotation marks around ETag');
           }
