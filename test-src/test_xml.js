@@ -136,7 +136,7 @@ describe('XML Parsing', () => {
 });
 
 describe('XML Generation', () => {
-  it('should generate valid content', () => {
+  it('should generate valid content to complete multipart upload', () => {
     let s3 = new Controller({region: 'us-east-1'});
 
     let expected = [
@@ -158,6 +158,30 @@ describe('XML Generation', () => {
     ].join('\n').trim();
 
     let actual = s3.__generateCompleteUploadBody(['a', 'b', 'c']).trim();
+
+    assume(actual).equals(expected);
+  });
+
+  it('should generate valid content to tag object', () => {
+    let s3 = new Controller({region: 'us-east-1'});
+
+    let expected = [
+      '<?xml version="1.0" encoding="UTF-8"?>', // not in docs, but should be
+      '<Tagging>',
+      '  <TagSet>',
+      '    <Tag>',
+      '      <Key>tag1</Key>',
+      '      <Value>val1</Value>',
+      '    </Tag>',
+      '    <Tag>',
+      '      <Key>tag2</Key>',
+      '      <Value>val2</Value>',
+      '    </Tag>',
+      '  </TagSet>',
+      '</Tagging>',
+    ].join('\n').trim();
+
+    let actual = s3.__generateTagSetBody({tag1: 'val1', tag2: 'val2'}).trim();
 
     assume(actual).equals(expected);
   });

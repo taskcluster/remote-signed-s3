@@ -1,6 +1,7 @@
 import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
+import qs from 'querystring';
 
 import _debug from 'debug';
 import aws4 from 'aws4';
@@ -21,6 +22,17 @@ function validateSha256 (sha256) {
     throw new Error('SHA256 is not a valid format');
   }
 }
+
+// This the list of canned ACLs that are valid.
+const cannedACLs = [
+  'private',
+  'public-read',
+  'public-read-write',
+  'aws-exec-read',
+  'authenticated-read',
+  'bucket-owner-read',
+  'bucket-owner-full-control',
+];
 
 // http://docs.aws.amazon.com/AmazonS3/latest/dev/qfacts.html
 
@@ -102,6 +114,43 @@ class Controller {
   }
 
   /**
+   * Generate the XML body required to set tags on an object.
+   *
+   * This function tags an object which is key-value pairings
+   * that represent each tag.
+   *
+   * EXAMPLE:
+   * <Tagging>
+   *    <TagSet>
+   *       <Tag>
+   *          <Key>tag1</Key>
+   *          <Value>val1</Value>
+   *       </Tag>
+   *       <Tag>
+   *          <Key>tag2</Key>
+   *          <Value>val2</Value>
+   *       </Tag>
+   *    </TagSet>
+   * </Tagging>
+   */
+  __generateTagSetBody(tags) {
+    let doc = new libxml.Document();
+
+    let ctx = doc.node('Tagging');
+    ctx = ctx.node('TagSet');
+    for (let key in tags) {
+      ctx = ctx.node('Tag');
+      ctx = ctx.node('Key', key);
+      ctx = ctx.parent();
+      ctx = ctx.node('Value', tags[key]);
+      ctx = ctx.parent();
+      ctx = ctx.parent();
+    }
+
+    return doc.toString();
+  }
+
+  /**
    * General method for extracting a specific property from an S3
    * response.  This assumes it's a top level node in the main container,
    * the response has a Bucket and Key property and those match
@@ -155,6 +204,63 @@ class Controller {
   __getMultipartEtag(doc, bucket, key) {
     return this.__getResponseProperty(doc, 'CompleteMultipartUploadResult', 'ETag', bucket, key);
   }
+
+  // Return a list of 2-tuple's that are header key and value pairings for the
+  // headers to specify as the ACL for an object
+  __determinePermissionsHeaders(permissions) {
+    let {acl, read, write, readAcp, writeAcp, fullControl} = permissions;
+    if (acl) {
+      if (typeof acl !== 'string') {
+        throw new Error('Canned ACL provided is not a string');
+      } else if (read || write || readAcp || writeAcp || fullControl) {
+        // NOTE: My reading of the documentation suggests that you can specify
+        // *either* a canned ACL *or* a specific access permissions acl
+        throw new Error('If you are using a canned ACL, you may not specify further permissions');
+      } else if (cannedACLs.indexOf(permissions.acl) === -1) {
+        throw new Error('You are requesting a canned ACL that is not valid');
+      }
+      return [['x-amz-acl', permissions.acl]];
+    }
+
+    let perms = [];
+
+    if (read) {
+      if (typeof read !== 'string') {
+        throw new Error('Grant Read permisson is invalid');
+      }
+      perms.push(['x-amz-grant-read', read]);
+    }
+
+    if (write) {
+      if (typeof write !== 'string') {
+        throw new Error('Grant Write permisson is invalid');
+      }
+      perms.push(['x-amz-grant-write', write]);
+    }
+
+    if (readAcp) {
+      if (typeof readAcp !== 'string') {
+        throw new Error('Grant Read Acp permisson is invalid');
+      }
+      perms.push(['x-amz-grant-read-acp', readAcp]);
+    }
+
+    if (writeAcp) {
+      if (typeof writeAcp !== 'string') {
+        throw new Error('Grant Write Acp permisson is invalid');
+      }
+      perms.push(['x-amz-grant-write-acp', writeAcp]);
+    }
+
+    if (fullControl) {
+      if (typeof fullControl !== 'string') {
+        throw new Error('Grant Full Control permisson is invalid');
+      }
+      perms.push(['x-amz-grant-full-control', fullControl]);
+    }
+
+    return perms;
+  }
  
   /**
    * Initiate a Multipart upload and return the UploadIp that
@@ -162,7 +268,7 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
    */
   async initiateMultipartUpload(opts) {
-    let {bucket, key, sha256, size} = opts;
+    let {bucket, key, sha256, size, permissions} = opts;
     validateSha256(sha256);
     if (size <= 0) {
       // Each part must have a non-zero size
@@ -171,7 +277,7 @@ class Controller {
       // The entire file must be lower than 5 TB
       throw new Error('Object must total fewer than 5 TB'); 
     }
-    let signedRequest = aws4.sign({
+    let unsignedRequest = {
       service: 's3',
       region: this.region,
       method: 'POST',
@@ -182,8 +288,17 @@ class Controller {
         'x-amz-meta-taskcluster-content-sha256': sha256,
         'x-amz-meta-taskcluster-content-length': size,
       }
-    });
+    };
 
+    // If we have permissions, set those values on the headers
+    if (permissions) {
+      let permHeaders = this.__determinePermissionsHeaders(permissions);
+      for (let tuple of permHeaders) {
+        unsignedRequest.headers[tuple[0]] = tuple[1];
+      }
+    }
+
+    let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
       req: await this.__serializeRequest(signedRequest)
@@ -244,12 +359,53 @@ class Controller {
   }
 
   /**
+   * This method is used to tag resources, and only after completion.  This is
+   * done to maintain parity with single part uploads and should *not* be
+   * relied upon to be atomic.  This is designed to be used in things like the
+   * cost explorer.  It is not intended to be part of the public api of this
+   * library, hence the name.  If it were possible to tag the multipart upload
+   * at object creation as it is with single part uploads, we'd do that instead
+   *
+   * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUTtagging.html
+   */
+  async __tagObject(opts) {
+    let {bucket, key, tags} = opts || {};
+    let requestBody = this.__generateTagSetBody(tags);
+    // Oddly, the S3 documentation says that Content-MD5 will be a required
+    // header but not in the table that I've come to expect from EC2.  Since
+    // we're doing V4 request signing, this shouldn't be an issue but since the
+    // docs aren't clear and MD5 is nearly free let's just do it to be safe
+    let contentMD5 = crypto.createHash('md5').update(requestBody).digest('hex');
+    let signedRequest = aws4.sign({
+      service: 's3',
+      region: this.region,
+      method: 'PUT',
+      protocol: 'https:',
+      hostname: `${bucket}.${this.s3host}`,
+      path: `/${key}?tagging=`,
+      headers: {
+        'content-md5': contentMD5,
+      },
+      body: requestBody,
+    });
+
+    let response = await this.runner({
+      req: await this.__serializeRequest(signedRequest),
+      body: requestBody,
+    });
+
+    if (response.statusCode !== 200) {
+      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+    }
+  }
+
+  /**
    * Mark a multipart upload as completed. 
    *
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
    */
   async completeMultipartUpload(opts) {
-    let {bucket, key, uploadId, etags} = opts;
+    let {bucket, key, uploadId, etags, tags} = opts;
     let requestBody = this.__generateCompleteUploadBody(etags);
     let signedRequest = aws4.sign({
       service: 's3',
@@ -268,7 +424,13 @@ class Controller {
     if (response.statusCode !== 200) {
       throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
     }
-    return this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
+    let multipartEtag = this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
+
+    if (tags) {
+      throw new Error('This is not yet implemented');
+    }
+
+    return multipartEtag;
   }
 
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
@@ -301,12 +463,13 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html
    */
   async generateSinglepartRequest(opts) {
-    let {bucket, key, sha256, size} = opts;
+    //grant-*-acp, grant-*
+    let {bucket, key, sha256, size, tags, permissions} = opts;
     !validateSha256(sha256);
     if (size <= 0 || size > 5 * 1024 * 1024 * 1024) {
       throw new Error('Objects must be more than 0 bytes and less than 5GB');
     }
-    let signedRequest = aws4.sign({
+    let unsignedRequest = {
       service: 's3',
       region: this.region,
       method: 'PUT',
@@ -319,7 +482,22 @@ class Controller {
         'x-amz-meta-taskcluster-content-sha256': sha256,
         'x-amz-meta-taskcluster-content-length': size,
       }
-    });
+    };
+
+    // Set any tags.  For once, AWS Tags are atomic!
+    if (tags) {
+      unsignedRequest.headers['x-amz-tagging'] = qs.stringify(tags);
+    }
+
+    // If we have permissions, set those values on the headers
+    if (permissions) {
+      let permHeaders = this.__determinePermissionsHeaders(permissions);
+      for (let tuple of permHeaders) {
+        unsignedRequest.headers[tuple[0]] = tuple[1];
+      }
+    }
+
+    let signedRequest = aws4.sign(unsignedRequest);
 
     return this.__serializeRequest(signedRequest);
   }

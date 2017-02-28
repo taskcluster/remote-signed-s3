@@ -96,7 +96,6 @@ describe('Client', () => {
         forceMP: true,
         partsize: 250,
       });
-      console.dir(info);
 
       let pn = 0;
       let requests = info.parts.map(part => {
@@ -139,9 +138,6 @@ describe('Client', () => {
         //now check for part number
         assume(responseData.headers).has.property('Partnumber', pn + '');
       }
-
-      console.dir(requests);
-      console.dir(actual);
 
       fullBody = fullBody.join('');
       assume(fullBody.length).equals(samplesize);
