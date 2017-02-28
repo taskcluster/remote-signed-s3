@@ -132,8 +132,37 @@ describe('XML Parsing', () => {
   // this is just the standard error parsing but checking for
   // a couple extra properties it's not critical
   it.skip('should parse an invalid signature S3 error correctly', () => {
-    let example'<Error><Code>SignatureDoesNotMatch</Code><Message>msg</Message><AWSAccessKeyId>key</AWSAccessKeyId><StringToSign>stringtosign</StringToSign><SignatureProvided>signatureprovided</SignatureProvided><StringToSignBytes>num pairs split by spaces</StringToSignBytes><CanonicalRequest>canonicalrequest</CanonicalRequest><CanonicalRequestBytes>num pairs split by spaces</CanonicalRequestBytes><RequestId>9F15C857BFE0F2EE</RequestId><HostId>hSoPfVamkzTDU/sTNF6pjiXV98hcXfHKMT9NdfmhxnOgWLkAkhjytVhd4TRkJgiRPRvASVjAX3w=</HostId></Error>'
+    '<Error><Code>SignatureDoesNotMatch</Code><Message>msg</Message><AWSAccessKeyId>key</AWSAccessKeyId><StringToSign>stringtosign</StringToSign><SignatureProvided>signatureprovided</SignatureProvided><StringToSignBytes>num pairs split by spaces</StringToSignBytes><CanonicalRequest>canonicalrequest</CanonicalRequest><CanonicalRequestBytes>num pairs split by spaces</CanonicalRequestBytes><RequestId>9F15C857BFE0F2EE</RequestId><HostId>hSoPfVamkzTDU/sTNF6pjiXV98hcXfHKMT9NdfmhxnOgWLkAkhjytVhd4TRkJgiRPRvASVjAX3w=</HostId></Error>'
 
+    let expected = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Error>',
+      '  <Code>SignatureDoesNotMatch</Code>',
+      '  <Message>mymsg</Message>',
+      '  <AWSAccessKeyId>key</AWSAccessKeyId>',
+      '  <StringToSign>stringtosign</StringToSign>',
+      '  <SignatureProvided>signatureprovided</SignatureProvided>',
+      '  <StringToSignBytes>num pairs split by spaces</StringToSignBytes>',
+      '  <CanonicalRequest>canonicalrequest</CanonicalRequest>',
+      '  <CanonicalRequestBytes>num pairs split by spaces</CanonicalRequestBytes>',
+      '  <RequestId>9F15C857BFE0F2EE</RequestId>',
+      '  <HostId>base64</HostId>',
+      '</Error>',
+    ];
+
+    let err = parseS3Response(body, true);
+    assume(err).to.be.instanceof(Error);
+    assume(err).has.property('code', 'SignatureDoesNotMatch');
+    assume(err).has.property('message', 'msg');
+    assume(err).has.property('resource', 'myresource');
+    assume(err).has.property('awsaccesskeyid', 'key');
+    assume(err).has.property('stringtosign', 'stringtosign');
+    assume(err).has.property('signatureprovided', 'signatureprovided');
+    assume(err).has.property('canonicalrequest', 'canonicalrequest');
+    
+    assume(() => {
+      parseS3Response(body);
+    }).to.throw(/^mymessage$/);
   });
 });
 
