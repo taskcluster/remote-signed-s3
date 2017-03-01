@@ -1,7 +1,11 @@
-import fs from 'mz/fs';
 import assert from 'assert';
 import crypto from 'crypto';
+
+import fs from 'mz/fs';
+
 import Runner from './runner';
+import InterchangeFormat from './interchange-format';
+import {Joi, schemas, runSchema, MB, GB, TB} from './schemas';
 
 const MAX_S3_CHUNKS = 10000;
 
@@ -12,21 +16,30 @@ const MAX_S3_CHUNKS = 10000;
 class Client {
 
   constructor(opts) {
-    let {runner, maxConcurrency, minMPSize, partsize} = opts || {};
-    // The maximum number of concurrent requests this Client
-    // should run
-    this.maxConcurrency = maxConcurrency;
-    this.partsize = (partsize || 25 * 1024 * 1024) + 0;
+    opts = runSchema(opts || {}, Joi.object().keys({
+      runner: Joi.any(),
+      runnerOpts: Joi.object().default({}),
+      partsize: Joi.number().min(5*MB).max(5*GB).default(25*MB),
+      multisize: Joi.number().default(100*MB),
+    }).without('runner', 'runnerOpts')
+      .optionalKeys(['runner', 'runnerOpts']));
 
+    let {runner, runnerOpts, partsize, multisize} = opts;
+
+    // Store value and not reference
+    this.partsize = partsize+0;
+
+    // Unlike the Controller, which has much simplier usage, here we do want
+    // the full Runner api to be available to the client
     if (!runner) {
-      runner = new Runner();
+      runner = new Runner(opts.runnerOpts);
     }
     
     // The Runner to use for this
     this.runner = runner;
 
     // The minimum size before switching to multipart
-    this.minMPSize = minMPSize;
+    this.multisize = opts.multisize;
   }
 
 
@@ -141,25 +154,50 @@ class Client {
     }
   }
 
-  __determineUploadType(size, forceMP, forceSP) {
+  __useMulti(size, forceMP, forceSP) {
+    // We want the ability to force multi or single
+    forceMP = process.env.FORCE_MP || forceMP;
+    forceSP = process.env.FORCE_SP || forceSP;
 
+    if (!size) {
+      throw new Error('You must provide a size');
+    }
+
+    console.dir({size, forceMP, forceSP, xyz: this.multiszie});
+
+    if (forceMP && forceSP) {
+      throw new Error('Forcing singlepart and multipart is mutually exclusive');
+    } else if (forceMP) {
+      return true;
+    } else if (forceSP) {
+      return false;
+    } else if (size >= this.multisize) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   async prepareUpload(opts) {
-    let {filename, forceMP, forceSP} = opts;
+    console.log('hi')
+    opts = runSchema(opts, Joi.object().keys({
+      filename: Joi.string().required(),
+      forceMP: Joi.boolean().truthy(),
+      forceSP: Joi.boolean().truthy(),
+      partsize: Joi.number().max(5 * GB).default(this.partsize),
+    }).without('forceSP', 'forceMP'));
+    console.log('validated')
+    let {filename, partsize, forceMP, forceSP} = opts;
 
-    let multipart = !!forceMP;
-
-    let filesize = await fs.stat(filename);
-
-    if (filesize >= this.minMPSize && !forceSP) {
-      multipart = true;
+    let filesize = (await fs.stat(filename)).size;
+    if (typeof filesize !== 'number') {
+      throw new Error('Unable to determine filesize of ' + filename);
     }
 
-    if (multipart) {
-      return this.__prepareMultipartUpload(opts);
+    if (this.__useMulti(filesize, forceMP, forceSP)) {
+      return this.__prepareMultipartUpload({filename, partsize});
     } else {
-      return this.__prepareSinglepartUpload(opts);
+      return this.__prepareSinglepartUpload({filename});
     }
   }
 
@@ -170,12 +208,23 @@ class Client {
    * list
    */
   async runUpload(request, upload) {
+    upload = runSchema(upload, Joi.object().keys({
+      filename: Joi.string(),
+      sha256: schemas.sha256,
+      size: Joi.number(),
+      parts: schemas.parts,
+    }).optionalKeys('parts'));
+
     let {filename, sha256, size, parts} = upload;
     let etags = [];
     let responses = [];
 
     if (!Array.isArray(request)) {
       request = [request];
+    }
+
+    for (let req of request) {
+      await InterchangeFormat.validate(req);
     }
 
     if (!parts) {

@@ -3,6 +3,7 @@ const fs = require('fs');
 const stream = require('stream');
 const assume = require('assume');
 //const sinon = require('sinon');
+const http = require('http');
 
 const Runner = require('../lib/runner');
 const Client = require('../lib/client');
@@ -17,26 +18,46 @@ const samplefile = __dirname + '/../package.json';
 const samplehash = crypto.createHash('sha256').update(fs.readFileSync(samplefile)).digest('hex');
 const samplesize = fs.statSync(samplefile).size;
 
-describe('Client', () => {
-  describe('Determining upload type', () => {
-    let client = new Client();
 
-    it('should pick multipart for a small file', () => {
+const bigfile = __dirname + '/../bigfile';
+// LOL MEMORY!
+const bigfilecontents = fs.readFileSync(bigfile);
+const bigfilehash = crypto.createHash('sha256').update(bigfilecontents).digest('hex');
+const bigfilesize = bigfilecontents.length;
+
+
+describe('Client', () => {
+  let client;
+  let server;
+
+  beforeEach(() => {
+    client = new Client();
+    if (server) {
+      server.close();
+    }
+  });
+  
+  describe('Determining upload type', () => {
+    it('should pick singlepart for a small file', () => {
+      assume(client.__useMulti(1)).to.be.false();
+    });
+
+    it('should pick multipart for a big file', () => {
+      assume(client.__useMulti(1024*1024*1024*1024)).to.be.true();
+    });
+    
+    it('should pick multipart for a small file when forcing multipart', () => {
+      assume(client.__useMulti(1024*1024*5, true, false)).to.be.true();
+    });
+
+    it('should pick singlepart for a big file when forcing singlepart', () => {
+      assume(client.__useMulti(1024*1024*1024*1024, false, true)).to.be.false();
     });
   });
 
   describe('Single Part Uploads', () => {
-    let client;
-    beforeEach(() => {
-      client = new Client({
-        forceSP: true,
-        partsize: 250,
-      });
-    });
-
     it('should be able prepare upload', async () => {
       let info = await client.__prepareSinglepartUpload({
-        forceSP: true,
         filename: samplefile,
       });
       assume(info).has.property('filename', samplefile);
@@ -44,9 +65,9 @@ describe('Client', () => {
       assume(info).has.property('size');
     });
 
+    /*
     it('should run an upload', async () => {
       let info = await client.prepareUpload({
-        forceSP: true,
         filename: samplefile,
       });
 
@@ -62,24 +83,80 @@ describe('Client', () => {
       assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
       assume(actual.data).has.property('length', samplesize);
       assume(actual.headers).has.property('Sha256', samplehash);
+    }); */
+
+
+    it('should run an upload', async () => {
+      let port = process.env.PORT || 8080;
+
+      await new Promise((resolve, reject) => {
+        server = http.createServer();
+
+        server.on('request', (request, response) => {
+          let size = 0;
+          let sha256 = crypto.createHash('sha256');
+
+          request.on('data', data => {
+            size += data.length;
+            sha256.update(data);
+          });
+
+          request.on('end', () => {
+            response.writeHead(200, 'OK', {
+              etag: request.headers.sha256,
+            });
+            response.end(JSON.stringify({
+              object: request.url.slice(1),
+              bytes: size,
+              hash: sha256.digest('hex'),
+            }));
+          });
+        });
+
+        server.listen(port, 'localhost', resolve);
+      });
+
+
+      let info = await client.prepareUpload({
+        filename: bigfile,
+        partsize: 5*1024*1024,
+        forceSP: true,
+      });
+
+      let pn = 0;
+      let requests = {
+        url: `http://localhost:${port}/object`,
+        method: 'post',
+        headers: {
+          sha256: info.sha256
+        }
+      };
+      
+      let actual = await client.runUpload(requests, info);
+
+      let expectedEtags = [info.sha256];
+
+      assume(actual.etags).deeply.equals(expectedEtags);
+
+      let body = JSON.parse(actual.responses[0].body);
+
+      assume(body.object).equals('object');
+      assume(body.hash).equals(info.sha256);
+      assume(body.bytes).equals(info.size);
+
     });
+
+
   });
 
   describe('Multiple Part Uploads', () => {
-    let client;
-    beforeEach(() => {
-      client = new Client({
-        forceMP: true,
-      });
-    });
-
     it('should be able prepare upload', async () => {
       let info = await client.__prepareMultipartUpload({
         forceMP: true,
-        filename: samplefile,
+        filename: bigfile,
       });
-      assume(info).has.property('filename', samplefile);
-      assume(info).has.property('sha256', samplehash);
+      assume(info).has.property('filename', bigfile);
+      assume(info).has.property('sha256', bigfilehash);
       assume(info).has.property('size');
       assume(info).has.property('parts');
       assume(info.parts).to.be.instanceof(Array);
@@ -91,17 +168,47 @@ describe('Client', () => {
     });
 
     it('should run an upload', async () => {
+      let port = process.env.PORT || 8080;
+
+      await new Promise((resolve, reject) => {
+        server = http.createServer();
+
+        server.on('request', (request, response) => {
+          let size = 0;
+          let sha256 = crypto.createHash('sha256');
+
+          request.on('data', data => {
+            size += data.length;
+            sha256.update(data);
+          });
+
+          request.on('end', () => {
+            response.writeHead(200, 'OK', {
+              etag: request.headers.partsha256,
+            });
+            response.end(JSON.stringify({
+              partnumber: Number.parseInt(request.url.slice(1)),
+              bytes: size,
+              hash: sha256.digest('hex'),
+            }));
+          });
+        });
+
+        server.listen(port, 'localhost', resolve);
+      });
+
+
       let info = await client.prepareUpload({
-        filename: samplefile,
+        filename: bigfile,
+        partsize: 5*1024*1024,
         forceMP: true,
-        partsize: 250,
       });
 
       let pn = 0;
       let requests = info.parts.map(part => {
         pn++;
         return {
-          url: httpbin + 'post',
+          url: `http://localhost:${port}/${pn}`,
           method: 'post',
           headers: {
             sha256: info.sha256,
@@ -113,37 +220,22 @@ describe('Client', () => {
 
       let actual = await client.runUpload(requests, info);
 
-      let expectedEtags = [];
-
-      for (let x = 0 ; x < samplesize ; x += 250) {
-        expectedEtags.push('NOETAG');
-      }
+      let expectedEtags = info.parts.map(x => x.sha256);
 
       assume(actual.etags).deeply.equals(expectedEtags);
-      assume(actual.responses).has.lengthOf(expectedEtags.length);
 
-      let fullBody = [];
-      pn = 0;
-      for (let response of actual.responses) {
-        let responseData = JSON.parse(response.body);
-        fullBody.push(responseData.data);
-        assume(responseData.headers).has.property('Sha256', info.sha256);
-        let partsize = Number.parseInt(responseData.headers['Content-Length']);
-        assume(partsize).to.be.at.most(250);
-        assume(responseData.headers)
-          .has.property('Content-Length', info.parts[pn].size + '');
-        assume(responseData.headers)
-          .has.property('Partsha256', info.parts[pn].sha256);
-        pn++;
-        //now check for part number
-        assume(responseData.headers).has.property('Partnumber', pn + '');
+
+      for (let x = 0; x < info.parts.length ; x++) {
+        let body = JSON.parse(actual.responses[x].body);
+        assume(body.partnumber).equals(x+1);
+        assume(body.hash).equals(info.parts[x].sha256);
+        if (x < info.parts.length - 1) {
+          assume(body.bytes).equals(5*1024*1024);
+        } else {
+          let lastpartsize = info.size % (5*1024*1024);
+          assume(body.bytes).equals(lastpartsize);
+        }
       }
-
-      fullBody = fullBody.join('');
-      assume(fullBody.length).equals(samplesize);
-      let expectedBody = fs.readFileSync(samplefile).toString();
-      assume(fullBody).equals(expectedBody);
-
     });
   });
 });

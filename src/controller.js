@@ -9,32 +9,9 @@ import libxml from 'libxmljs';
 
 import Runner from './runner';
 import InterchangeFormat from './interchange-format';
+import {Joi, schemas, runSchema} from './schemas';
 
 const debug = _debug('remote-s3:Bucket');
-
-// We want to ensure that any where that we're doign things involving
-// SHA256 Hex digests that they are a valid format
-const emptyStringSha256 = crypto.createHash('sha256').update('').digest('hex');
-function validateSha256 (sha256) {
-  if (sha256 === emptyStringSha256) {
-    throw new Error('SHA256 values must not be of the empty string');
-  } else if (!/^[a-fA-F0-9]{64}$/.test(sha256)) {
-    throw new Error('SHA256 is not a valid format');
-  }
-}
-
-// This the list of canned ACLs that are valid.
-const cannedACLs = [
-  'private',
-  'public-read',
-  'public-read-write',
-  'aws-exec-read',
-  'authenticated-read',
-  'bucket-owner-read',
-  'bucket-owner-full-control',
-];
-
-// http://docs.aws.amazon.com/AmazonS3/latest/dev/qfacts.html
 
 /**
  * This is a reduced scope S3 client which knows how to run the following
@@ -54,16 +31,25 @@ const cannedACLs = [
  */
 class Controller {
   constructor(opts) {
-    let {region, runner} = opts || {};
-    region = region || 'us-east-1';
-    this.region = region;
-    if (!runner) {
-      let r = new Runner();
+    opts = runSchema(opts, Joi.object().keys({
+      region: Joi.string().default('us-east-1'),
+      runner: Joi.any(),
+      runnerOpts: Joi.object(),
+    }).without('runner', 'runnerOpts').optionalKeys(['runner', 'runnerOpts']));
+
+    this.region = opts.region;
+    let runner = opts.runner;
+
+    // we don't want to get too specific into the internal API of the run() method,
+    // so we're only saving the .run() method of the runner class that we're creating here. 
+    if (!opts.runner) {
+      let r = new Runner(opts.runnerOpts || {});
       runner = r.run.bind(r);
     }
+
     this.runner = runner;
     // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
-    let s3region = region === 'us-east-1' ? 's3' : 's3-' + region;
+    let s3region = this.region === 'us-east-1' ? 's3' : 's3-' + this.region;
     this.s3host = `${s3region}.amazonaws.com`;
   }
 
@@ -98,6 +84,7 @@ class Controller {
    * </CompleteMultipartUpload>
    */
   __generateCompleteUploadBody(etags) {
+    etags = runSchema(etags, Joi.array().items(Joi.string()).min(1).max(10000));
     let doc = new libxml.Document();
 
     let ctx = doc.node('CompleteMultipartUpload');
@@ -134,6 +121,10 @@ class Controller {
    * </Tagging>
    */
   __generateTagSetBody(tags) {
+    // TODO: Figure out how to double check that all keys and values
+    // match a pattern or something
+    tags = runSchema(tags, Joi.object());
+
     let doc = new libxml.Document();
 
     let ctx = doc.node('Tagging');
@@ -157,6 +148,7 @@ class Controller {
    * the passed in ones.  This is a sanity check.
    */
   __getResponseProperty(doc, container, property, bucket, key) {
+     
     if (doc.root().name() !== container) {
       throw new Error('Document does not have ' + container);
     }
@@ -208,54 +200,31 @@ class Controller {
   // Return a list of 2-tuple's that are header key and value pairings for the
   // headers to specify as the ACL for an object
   __determinePermissionsHeaders(permissions) {
+    permissions = runSchema(permissions, schemas['permissions']);
     let {acl, read, write, readAcp, writeAcp, fullControl} = permissions;
     if (acl) {
-      if (typeof acl !== 'string') {
-        throw new Error('Canned ACL provided is not a string');
-      } else if (read || write || readAcp || writeAcp || fullControl) {
-        // NOTE: My reading of the documentation suggests that you can specify
-        // *either* a canned ACL *or* a specific access permissions acl
-        throw new Error('If you are using a canned ACL, you may not specify further permissions');
-      } else if (cannedACLs.indexOf(permissions.acl) === -1) {
-        throw new Error('You are requesting a canned ACL that is not valid');
-      }
       return [['x-amz-acl', permissions.acl]];
     }
 
     let perms = [];
 
     if (read) {
-      if (typeof read !== 'string') {
-        throw new Error('Grant Read permisson is invalid');
-      }
       perms.push(['x-amz-grant-read', read]);
     }
 
     if (write) {
-      if (typeof write !== 'string') {
-        throw new Error('Grant Write permisson is invalid');
-      }
       perms.push(['x-amz-grant-write', write]);
     }
 
     if (readAcp) {
-      if (typeof readAcp !== 'string') {
-        throw new Error('Grant Read Acp permisson is invalid');
-      }
       perms.push(['x-amz-grant-read-acp', readAcp]);
     }
 
     if (writeAcp) {
-      if (typeof writeAcp !== 'string') {
-        throw new Error('Grant Write Acp permisson is invalid');
-      }
       perms.push(['x-amz-grant-write-acp', writeAcp]);
     }
 
     if (fullControl) {
-      if (typeof fullControl !== 'string') {
-        throw new Error('Grant Full Control permisson is invalid');
-      }
       perms.push(['x-amz-grant-full-control', fullControl]);
     }
 
@@ -268,8 +237,17 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
    */
   async initiateMultipartUpload(opts) {
+
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket,
+      key: schemas.key,
+      sha256: schemas.sha256,
+      size: schemas.mpSize,
+      permissions: schemas.permissions,
+    }).optionalKeys('permissions'));
+
     let {bucket, key, sha256, size, permissions} = opts;
-    validateSha256(sha256);
+
     if (size <= 0) {
       // Each part must have a non-zero size
       throw new Error('Objects must be more than 0 bytes');
@@ -327,19 +305,24 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
    */
   async generateMultipartRequest(opts) {
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket,
+      key: schemas.key,
+      uploadId: Joi.string(),
+      parts: schemas.parts,
+    }));
+
     let {bucket, key, uploadId, parts} = opts;
     let requests = [];
-    if (parts.length < 1 || parts.length > 10000) {
-      throw new Error('Must have between 1 and 10000 parts');
-    }
+
     for (let num = 1 ; num <= parts.length ; num++) {
       let part = parts[num - 1];
 
-      validateSha256(part.sha256);
+      // This is sort of hard to encapsulate in Joi for me, so for the time
+      // being we'll leave this as an external check until I can figure out how
+      // to say that all parts until the last must be at least 5MB
       if (part.size < 5 * 1024 * 1024 && num < parts.length) {
-        throw new Error(`Part ${num}/${parts.length} must be more than 5MB`);
-      } else if (part.size > 5 * 1024 * 1024 * 1024) {
-        throw new Error(`Part ${num} exceeds 5GB limit`);
+        throw new Error(`Part ${num}/${parts.length} must be more than 5MB, except last`);
       }
 
       let signedRequest = aws4.sign({
@@ -372,7 +355,14 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUTtagging.html
    */
   async __tagObject(opts) {
-    let {bucket, key, tags} = opts || {};
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket,
+      key: schemas.key,
+      tags: schemas.tags,
+    }));
+
+    let {bucket, key, tags} = opts;
+
     let requestBody = this.__generateTagSetBody(tags);
 
     let signedRequest = aws4.sign({
@@ -403,6 +393,14 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
    */
   async completeMultipartUpload(opts) {
+    opts = runSchema(opts, Joi.object({
+      bucket: schemas.bucket,
+      key: schemas.key,
+      etags: schemas.etags,
+      tags: schemas.tags,
+      uploadId: schemas.uploadId,
+    }).optionalKeys('tags'));
+
     let {bucket, key, uploadId, etags, tags} = opts;
 
     // I'm not sure why, but for some reason the AWS4 library generates the
@@ -447,6 +445,12 @@ class Controller {
 
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
   async abortMultipartUpload(opts) {
+   opts = runSchema(opts, Joi.object({
+     bucket: schemas.bucket,
+     key: schemas.key,
+     uploadId: schemas.uploadId,
+   }));
+
     let {bucket, key, uploadId} = opts;
     let signedRequest = aws4.sign({
       service: 's3',
@@ -478,12 +482,17 @@ class Controller {
    * http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPUT.html
    */
   async generateSinglepartRequest(opts) {
-    //grant-*-acp, grant-*
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket,
+      key: schemas.key,
+      sha256: schemas.sha256,
+      size: schemas.spSize,
+      tags: schemas.tags,
+      permissions: schemas.permissions,
+    }).optionalKeys('tags', 'permissions'));
+
     let {bucket, key, sha256, size, tags, permissions} = opts;
-    !validateSha256(sha256);
-    if (size <= 0 || size > 5 * 1024 * 1024 * 1024) {
-      throw new Error('Objects must be more than 0 bytes and less than 5GB');
-    }
+
     let unsignedRequest = {
       service: 's3',
       region: this.region,
@@ -557,6 +566,9 @@ function parseS3Response(body, noThrow = false) {
 
   return doc;
 }
+
+// Let's export these
+Controller.schemas = schemas;
 
 module.exports = {
   Controller,

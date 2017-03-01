@@ -15,7 +15,7 @@ const httpMethods = [
 
 // TODO: Figure out how to specify headers better
 const InterchangeFormatSchema = Joi.object().keys({
-  url: Joi.string().regex(/^https:/).required(),
+  url: Joi.string().regex(/^https?:/).required(),
   method: Joi.valid(httpMethods).required(),
   headers: Joi.object().required(),
 });
