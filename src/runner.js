@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import http from 'http';
 import https from 'https';
 import urllib from 'url';
 import stream from 'stream';
@@ -201,7 +202,12 @@ class Runner {
     _request.method = method;
     _request.headers = headers;
 
-    let request = https.request(_request);
+    let request;
+    if (_request.protocol !== 'http:') {
+      request = https.request(_request);
+    } else {
+      request = http.request(_request);
+    }
 
     let debugStr = `REQUESTED ${method} ${url}`;
 

@@ -96,7 +96,6 @@ describe('S3 Client', () => {
       let result = await inst.initiateMultipartUpload({
         bucket: 'example-bucket',
         key: 'example-object',
-        uploadId: 'testsha256',
         sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
         size: 1234,
       });
@@ -429,7 +428,7 @@ describe('S3 Client', () => {
     });
   });
 
-  it('should not allow parts with size <= 0', () => {
+  it('should not allow size <= 0', () => {
     let {inst} = runner();
 
     return assertReject(inst.generateSinglepartRequest({
@@ -474,13 +473,13 @@ describe('S3 Client', () => {
     it('should handle an invalid Canned ACL', () => {
       assume(() => {
         inst.__determinePermissionsHeaders({acl: 'bogus'});
-      }).throws(/^You are requesting a canned ACL that is not valid/);
+      }).throws(/^child "acl" fails because \["acl" must be one of \[/);
     });
 
     it('should treat canned ACLs and specific permissions as mutually exclusive', () => {
       assume(() => {
         inst.__determinePermissionsHeaders({acl: 'private', read: 'ooogieboogie'});
-      }).throws(/^If you are using a canned ACL, you may not/);
+      }).throws(/^"acl" conflict with forbidden peer "read"/);
     });
 
     it('should handle specific permissions', () => {
