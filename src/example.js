@@ -27,7 +27,7 @@ import {Controller} from './controller';
 // Client.
 class ServerAPI {
   constructor(opts) {
-    this.controller = new Controller();
+    this.controller = new Controller(/*{region: 'eu-central-1'}*/);
     this.key = undefined;
     this.bucket = undefined;
     this.uploadId = undefined;
