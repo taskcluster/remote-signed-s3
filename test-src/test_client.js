@@ -197,46 +197,49 @@ describe('Client', () => {
         server.listen(port, 'localhost', resolve);
       });
 
-      let partsize = 5*1024*1024;
+      // We want to allow an arbitrary file to be used as input to the test, so
+      // we're going to try two different partsizes to make it more likely we
+      // hit the last part being not a full sized part
+      for (let partsize of [5*1024*1024, 5*1000*1000]) {
 
-      let info = await client.prepareUpload({
-        filename: bigfile,
-        partsize,
-        forceMP: true,
-      });
+        let info = await client.prepareUpload({
+          filename: bigfile,
+          partsize,
+          forceMP: true,
+        });
 
-      let pn = 0;
-      let requests = info.parts.map(part => {
-        pn++;
-        return {
-          url: `http://localhost:${port}/${pn}`,
-          method: 'post',
-          headers: {
-            sha256: info.sha256,
-            partSha256: part.sha256,
-            partNumber: pn,
+        let pn = 0;
+        let requests = info.parts.map(part => {
+          pn++;
+          return {
+            url: `http://localhost:${port}/${pn}`,
+            method: 'post',
+            headers: {
+              sha256: info.sha256,
+              partSha256: part.sha256,
+              partNumber: pn,
+            }
           }
-        }
-      });
+        });
 
-      let actual = await client.runUpload(requests, info);
+        let actual = await client.runUpload(requests, info);
 
-      let expectedEtags = info.parts.map(x => x.sha256);
+        let expectedEtags = info.parts.map(x => x.sha256);
 
-      assume(actual.etags).deeply.equals(expectedEtags);
+        assume(actual.etags).deeply.equals(expectedEtags);
 
-
-      for (let x = 0; x < info.parts.length ; x++) {
-        let body = JSON.parse(actual.responses[x].body);
-        assume(body.partnumber).equals(x+1);
-        assume(body.hash).equals(info.parts[x].sha256);
-        if (x < info.parts.length - 1) {
-          assume(body.bytes).equals(partsize);
-        } else {
-          // In case the last part is smaller than a full part
-          // we want to check for that value;
-          let lastpartsize = info.size % (partsize) || partsize;
-          assume(body.bytes).equals(lastpartsize);
+        for (let x = 0; x < info.parts.length ; x++) {
+          let body = JSON.parse(actual.responses[x].body);
+          assume(body.partnumber).equals(x+1);
+          assume(body.hash).equals(info.parts[x].sha256);
+          if (x < info.parts.length - 1) {
+            assume(body.bytes).equals(partsize);
+          } else {
+            // In case the last part is smaller than a full part
+            // we want to check for that value;
+            let lastpartsize = info.size % (partsize) || partsize;
+            assume(body.bytes).equals(lastpartsize);
+          }
         }
       }
     });
