@@ -13,6 +13,9 @@ import {Joi, schemas, runSchema} from './schemas';
 
 const debug = _debug('remote-s3:Bucket');
 
+// Rather than generating for every abort invocation
+const emptysha256 = crypto.createHash('sha256').update('').digest('hex');
+
 /**
  * This is a reduced scope S3 client which knows how to run the following
  *
@@ -282,26 +285,26 @@ class Controller {
     // If we have permissions, set those values on the headers
     if (permissions) {
       let permHeaders = this.__determinePermissionsHeaders(permissions);
-      console.dir(permHeaders);
       for (let tuple of permHeaders) {
         unsignedRequest.headers[tuple[0]] = tuple[1];
       }
     }
 
-    console.dir(unsignedRequest);
     let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest)
     });
     
-    let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
+    let parsedResponse = parseS3Response(response.body);
 
-    if (response.statusCode !== 200) {
-      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+    let uploadId = this.__getUploadId(parsedResponse, bucket, key);
+
+    if (response.statusCode === 200) {
+      return uploadId;
+    } else {
+      throw new Error('Could not initiate multipart upload');
     }
-
-    return uploadId;
   }
 
   /**
@@ -393,10 +396,11 @@ class Controller {
       body: requestBody,
     });
 
+
     parseS3Response(response.body);
 
     if (response.statusCode !== 200) {
-      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+      throw new Error('Could not tag object');
     }
   }
 
@@ -443,10 +447,12 @@ class Controller {
       body: requestBody,
     });
 
-    let multipartEtag = this.__getMultipartEtag(parseS3Response(response.body), bucket, key);
+    let parsedResponse = parseS3Response(response.body);
+
+    let multipartEtag = this.__getMultipartEtag(parsedResponse, bucket, key);
 
     if (response.statusCode !== 200) {
-      throw new Error('Expected HTTP Status Code 200, got: ' + response.statusCode);
+      throw new Error('Could not complete a multipart upload');
     }
 
     if (tags) {
@@ -471,6 +477,10 @@ class Controller {
       method: 'DELETE',
       protocol: this.s3protocol,
       hostname: this.__s3hostname(bucket),
+      headers: {
+        'content-length': 0,
+        'x-amx-content-sha256': emptysha256,
+      },
       path: `/${key}?uploadId=`,
     });
 
@@ -481,7 +491,7 @@ class Controller {
     parseS3Response(response.body);
 
     if (response.statusCode !== 204) {
-      throw new Error('Expected HTTP Status Code 204, got: ' + response.statusCode);
+      throw new Error('Could not abort multipart upload');
     }
   }
 
@@ -561,7 +571,9 @@ function parseS3Response(body, noThrow = false) {
     for (let child of doc.root().childNodes()) {
       errorProperties[child.name()] = child.text();
     }
+
     let error = new Error(errorProperties.Message || 'Unknown S3 Error');
+
     for (let property in errorProperties) {
       error[property.toLowerCase()] = errorProperties[property];
     }

@@ -21,7 +21,7 @@
     "compile": "babel-compile -p taskcluster src:lib test-src:test",
     "prepublish": "npm run compile",
     "pretest": "npm run compile",
-    "test": "mocha"
+    "test": "DEBUG= mocha"
   },
   "keywords": [
     "taskcluster",
