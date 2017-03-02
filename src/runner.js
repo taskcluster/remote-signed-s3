@@ -50,7 +50,7 @@ class Runner {
   async runOnce(opts) {
     let {req, body, streamingOutput} = opts;
 
-    await InterchangeFormat.validate(req);
+    InterchangeFormat.validate(req);
 
     let {url, method, headers} = req;
 
@@ -196,7 +196,6 @@ class Runner {
 
       });
     }
-
 
     let _request = urllib.parse(url);
     _request.method = method;

@@ -31,7 +31,7 @@ const debug = _debug('remote-s3:Bucket');
  */
 class Controller {
   constructor(opts) {
-    opts = runSchema(opts, Joi.object().keys({
+    opts = runSchema(opts || {}, Joi.object().keys({
       region: Joi.string().default('us-east-1'),
       runner: Joi.any(),
       runnerOpts: Joi.object(),
@@ -51,20 +51,24 @@ class Controller {
     // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
     let s3region = this.region === 'us-east-1' ? 's3' : 's3-' + this.region;
     this.s3host = `${s3region}.amazonaws.com`;
+
+    // These values are used for unit testing to direct the 
+    this.s3protocol = 'https:';
+    this.s3port = undefined;
   }
 
   /** Convert the result from the aws4.sign method into the
    * general form and return an object in the form:
    *   { url: '...', method: '...', headers: {key: 'value'}}
    */
-  async __serializeRequest(req) {
+  __serializeRequest(req) {
     let serialized = {
       url: `${req.protocol}//${req.hostname}${req.path}`,
       method: req.method,
       headers: req.headers,
     };
 
-    await InterchangeFormat.validate(serialized);
+    InterchangeFormat.validate(serialized);
     return serialized;
   }
 
@@ -148,7 +152,6 @@ class Controller {
    * the passed in ones.  This is a sanity check.
    */
   __getResponseProperty(doc, container, property, bucket, key) {
-     
     if (doc.root().name() !== container) {
       throw new Error('Document does not have ' + container);
     }
@@ -230,6 +233,14 @@ class Controller {
 
     return perms;
   }
+
+  __s3hostname(bucket) {
+    let hostname = `${bucket}.${this.s3host}`;
+    if (this.s3port) {
+      hostname += ':' + this.s3port;
+    }
+    return hostname;
+  }
  
   /**
    * Initiate a Multipart upload and return the UploadIp that
@@ -259,12 +270,12 @@ class Controller {
       service: 's3',
       region: this.region,
       method: 'POST',
-      protocol: 'https:',
-      hostname: `${bucket}.${this.s3host}`,
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
       path: `/${key}?uploads=`,
       headers: {
-        'x-amz-meta-taskcluster-content-sha256': sha256,
-        'x-amz-meta-taskcluster-content-length': size,
+        'x-amz-meta-content-sha256': sha256,
+        'x-amz-meta-content-length': size,
       }
     };
 
@@ -279,7 +290,7 @@ class Controller {
     let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
-      req: await this.__serializeRequest(signedRequest)
+      req: this.__serializeRequest(signedRequest)
     });
     
     let uploadId = this.__getUploadId(parseS3Response(response.body), bucket, key);
@@ -329,8 +340,8 @@ class Controller {
         service: 's3',
         region: this.region,
         method: 'PUT',
-        protocol: 'https:',
-        hostname: `${bucket}.${this.s3host}`,
+        protocol: this.s3protocol,
+        hostname: this.__s3hostname(bucket),
         path: `/${key}?partNumber=${num}&uploadId=${uploadId}`,
         headers: {
           'x-amz-content-sha256': part.sha256,
@@ -338,7 +349,7 @@ class Controller {
         }
       });
 
-      requests.push(await this.__serializeRequest(signedRequest));
+      requests.push(this.__serializeRequest(signedRequest));
     }
 
     return requests;
@@ -369,14 +380,14 @@ class Controller {
       service: 's3',
       region: this.region,
       method: 'PUT',
-      protocol: 'https:',
-      hostname: `${bucket}.${this.s3host}`,
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
       path: `/${key}?tagging=`,
       body: requestBody,
     });
 
     let response = await this.runner({
-      req: await this.__serializeRequest(signedRequest),
+      req: this.__serializeRequest(signedRequest),
       body: requestBody,
     });
 
@@ -416,8 +427,8 @@ class Controller {
       service: 's3',
       region: this.region,
       method: 'POST',
-      protocol: 'https:',
-      hostname: `${bucket}.${this.s3host}`,
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
       path: `/${key}?uploadId=${uploadId}`,
       headers: {
         'X-Amz-Content-Sha256': requestBodySha256.digest('hex'),
@@ -426,7 +437,7 @@ class Controller {
     });
 
     let response = await this.runner({
-      req: await this.__serializeRequest(signedRequest),
+      req: this.__serializeRequest(signedRequest),
       body: requestBody,
     });
 
@@ -456,13 +467,13 @@ class Controller {
       service: 's3',
       region: this.region,
       method: 'DELETE',
-      protocol: 'https:',
-      hostname: `${bucket}.${this.s3host}`,
-      path: `/${key}?uploads=`,
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
+      path: `/${key}?uploadId=`,
     });
 
     let response = await this.runner({
-      req: await this.__serializeRequest(signedRequest),
+      req: this.__serializeRequest(signedRequest),
     });
 
     parseS3Response(response.body);
@@ -497,14 +508,14 @@ class Controller {
       service: 's3',
       region: this.region,
       method: 'PUT',
-      protocol: 'https:',
-      hostname: `${bucket}.${this.s3host}`,
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
       path: `/${key}`,
       headers: {
         'content-length': size,
         'x-amz-content-sha256': sha256,
-        'x-amz-meta-taskcluster-content-sha256': sha256,
-        'x-amz-meta-taskcluster-content-length': size,
+        'x-amz-meta-content-sha256': sha256,
+        'x-amz-meta-content-length': size,
       }
     };
 
