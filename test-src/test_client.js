@@ -197,10 +197,11 @@ describe('Client', () => {
         server.listen(port, 'localhost', resolve);
       });
 
+      let partsize = 5*1024*1024;
 
       let info = await client.prepareUpload({
         filename: bigfile,
-        partsize: 5*1024*1024,
+        partsize,
         forceMP: true,
       });
 
@@ -230,9 +231,11 @@ describe('Client', () => {
         assume(body.partnumber).equals(x+1);
         assume(body.hash).equals(info.parts[x].sha256);
         if (x < info.parts.length - 1) {
-          assume(body.bytes).equals(5*1024*1024);
+          assume(body.bytes).equals(partsize);
         } else {
-          let lastpartsize = info.size % (5*1024*1024);
+          // In case the last part is smaller than a full part
+          // we want to check for that value;
+          let lastpartsize = info.size % (partsize) || partsize;
           assume(body.bytes).equals(lastpartsize);
         }
       }
