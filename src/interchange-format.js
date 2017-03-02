@@ -20,24 +20,15 @@ const InterchangeFormatSchema = Joi.object().keys({
   headers: Joi.object().required(),
 });
 
-async function validate(obj) {
-  return new Promise((resolve, reject) => {
-    Joi.validate(obj, InterchangeFormatSchema, (err, value) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(err);
-      }
-    });
-  });
-}
-
-async function validateList(list) {
-  return await Promise.all(list.map(obj => validate(obj)));
+function validate(obj) {
+  let result = Joi.validate(obj, InterchangeFormatSchema);
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  return obj;
 }
 
 module.exports = {
   validate,
-  validateList,
   InterchangeFormatSchema,
 }
