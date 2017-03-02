@@ -5,21 +5,40 @@ const assume = require('assume');
 //const sinon = require('sinon');
 const http = require('http');
 
+const DigestStream = require('../lib/digest-stream');
 const Client = require('../lib/client');
 
 const assertReject = require('./utils').assertReject;
 
 const bigfile = __dirname + '/../bigfile';
-// LOL MEMORY!
-let bigfilecontents = fs.readFileSync(bigfile);
-const bigfilehash = crypto.createHash('sha256').update(bigfilecontents).digest('hex');
-const bigfilesize = bigfilecontents.length;
-bigfilecontents = undefined;
-if (global.gc) global.gc();
 
 describe('Client', () => {
   let client;
   let server;
+
+  let bigfilehash;
+  let bigfilesize;
+
+  before(done => {
+    let ds = new DigestStream();
+    let rs = fs.createReadStream(bigfile);
+
+    ds.on('error', done);
+    rs.on('error', done);
+    
+    rs.pipe(ds).pipe(fs.createWriteStream('/dev/null'));
+
+    ds.on('finish', () => {
+      try {
+        bigfilehash = ds.hash;
+        bigfilesize = ds.size;
+        done();
+      } catch (err) {
+        done(err);
+      }
+    });
+  });
+
 
   beforeEach(() => {
     client = new Client();
