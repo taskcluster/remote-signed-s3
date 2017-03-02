@@ -5,26 +5,17 @@ const assume = require('assume');
 //const sinon = require('sinon');
 const http = require('http');
 
-const Runner = require('../lib/runner');
 const Client = require('../lib/client');
 
 const assertReject = require('./utils').assertReject;
 
-const runner = new Runner();
-
-const httpbin = 'https://httpbin.org/';
-
-const samplefile = __dirname + '/../package.json';
-const samplehash = crypto.createHash('sha256').update(fs.readFileSync(samplefile)).digest('hex');
-const samplesize = fs.statSync(samplefile).size;
-
-
 const bigfile = __dirname + '/../bigfile';
 // LOL MEMORY!
-const bigfilecontents = fs.readFileSync(bigfile);
+let bigfilecontents = fs.readFileSync(bigfile);
 const bigfilehash = crypto.createHash('sha256').update(bigfilecontents).digest('hex');
 const bigfilesize = bigfilecontents.length;
-
+bigfilecontents = undefined;
+if (global.gc) global.gc();
 
 describe('Client', () => {
   let client;
@@ -58,33 +49,12 @@ describe('Client', () => {
   describe('Single Part Uploads', () => {
     it('should be able prepare upload', async () => {
       let info = await client.__prepareSinglepartUpload({
-        filename: samplefile,
+        filename: bigfile,
       });
-      assume(info).has.property('filename', samplefile);
-      assume(info).has.property('sha256', samplehash);
+      assume(info).has.property('filename', bigfile);
+      assume(info).has.property('sha256', bigfilehash);
       assume(info).has.property('size');
     });
-
-    /*
-    it('should run an upload', async () => {
-      let info = await client.prepareUpload({
-        filename: samplefile,
-      });
-
-      let actual = await client.runUpload({
-        url: httpbin + 'post',
-        method: 'post', 
-        headers: {sha256: samplehash}}, info);
-
-      assume(actual.etags).deeply.equals(['NOETAG']);
-      assume(actual.responses).has.lengthOf(1);
-      actual = JSON.parse(actual.responses[0].body);
-      assume(actual.data).deeply.equals(fs.readFileSync(samplefile).toString());
-      assume(actual.headers).has.property('Content-Length', Number(samplesize).toString());
-      assume(actual.data).has.property('length', samplesize);
-      assume(actual.headers).has.property('Sha256', samplehash);
-    }); */
-
 
     it('should run an upload', async () => {
       let port = process.env.PORT || 8080;
