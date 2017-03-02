@@ -6,6 +6,7 @@ const fs = require('fs');
 
 const assume = require('assume');
 const { Controller, parseS3Response } = require('../');
+const DigestStream = require('../lib/digest-stream');
 const assertReject = require('./utils').assertReject;
 const InterchangeFormat = require('../lib/interchange-format');
 
@@ -17,12 +18,6 @@ process.on('unhandledRejection', err => {
 });
 
 const bigfile = __dirname + '/../bigfile';
-// LOL MEMORY!
-let bigfilecontents = fs.readFileSync(bigfile);
-const bigfilehash = crypto.createHash('sha256').update(bigfilecontents).digest('hex');
-const bigfilesize = bigfilecontents.length;
-bigfilecontents = undefined;
-if (global.gc) global.gc();
 
 describe('S3 Client', () => {
   let controller;
@@ -30,6 +25,29 @@ describe('S3 Client', () => {
   let bucket = 'test-bucket';
   let key = 'test-key';
   let port = process.env.PORT || 8080;
+
+  let bigfilehash;
+  let bigfilesize;
+
+  before(done => {
+    let ds = new DigestStream();
+    let rs = fs.createReadStream(bigfile);
+
+    ds.on('error', done);
+    rs.on('error', done);
+    
+    rs.pipe(ds).pipe(fs.createWriteStream('/dev/null'));
+
+    ds.on('finish', () => {
+      try {
+        bigfilehash = ds.hash;
+        bigfilesize = ds.size;
+        done();
+      } catch (err) {
+        done(err);
+      }
+    });
+  });
 
   beforeEach(async () => {
     controller = new Controller();
