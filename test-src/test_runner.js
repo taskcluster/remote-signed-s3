@@ -3,6 +3,8 @@ const fs = require('fs');
 const stream = require('stream');
 const assume = require('assume');
 const sinon = require('sinon');
+const http = require('http');
+const urllib = require('url');
 
 const Runner = require('../lib/runner');
 
@@ -10,13 +12,100 @@ const assertReject = require('./utils').assertReject;
 
 const runner = new Runner();
 
-const httpbin = 'https://httpbin.org/';
+const testServerBase = 'http://localhost:8080/';
 
 describe('Request Runner', () => {
+  
+  let server;
+  let port = process.env.PORT || 8080;
+
+  before(done => {
+    server = http.createServer();
+
+    server.on('request', (request, response) => {
+      let requestBody = [];
+      let requestSize = 0;
+
+      request.on('data', data => {
+        requestBody.push(data);
+        requestSize += data.length;
+      });
+
+      request.on('end', () => {
+        requestBody = Buffer.concat(requestBody);
+        try {
+          let endpoint = urllib.parse(request.url).pathname.slice(1);
+          let statusCode = 501;
+          let headers = {};
+          let body = '';
+          let responseStream;
+
+
+          if (/^simple\//.test(endpoint)) {
+            statusCode = 200;
+            body = 'Simple HTTP!';
+          } else if (/^status\//.test(endpoint)) {
+            statusCode = Number.parseInt(endpoint.split('/')[1]);
+            body = statusCode.toString();
+          } else if (/^file/.test(endpoint)) {
+            statusCode = 200;
+            body = fs.readFileSync(__dirname + '/../package.json');
+          } else if (/^big-file/.test(endpoint)) {
+            statusCode = 200;
+            body = fs.readFileSync(__dirname + '/../bigfile');
+          } else if (/^header-repeat/.test(endpoint)) {
+            statusCode = 200;
+            body = JSON.stringify({headers: request.headers});
+          } else if (/^method\//.test(endpoint)) {
+            statusCode = 200;
+            let method = endpoint.split('/')[1].toUpperCase();
+            if (request.method !== method) {
+              statusCode = 400;
+              body = 'You tried to ' + method + ' but actually ' + request.method + 'ed';
+            } else {
+              statusCode = 200;
+              body = method;
+            }
+          } else if (/^echo-data\//.test(endpoint)) {
+            statusCode = 200;
+            let method = endpoint.split('/')[1];
+            if (request.method === 'GET' || request.method === 'HEAD') {
+              statusCode = 400;
+              body = 'you cannot include data on a GET or HEAD';
+            } else {
+              statusCode = 200;
+              body = JSON.stringify({requestBody: requestBody.toString(), requestSize});
+            }
+          } else {
+            statusCode = 418;
+          }
+
+
+          if (statusCode === 200 && body.length === 0) {
+            statusCode = 204;
+          }
+          headers['content-length'] = body.length;
+          response.writeHead(statusCode, headers);
+          response.end(body);
+        } catch (err) {
+          // Be super loud about these failures!
+          console.log(err.stack || err);
+          throw err;
+        }
+      })
+    });
+
+    server.listen(port, 'localhost', done);
+  });
+
+  // If you want to play with this development server, uncomment this
+  // line:
+  // it.only('test server', done => { });
+
   it('should be able to make a basic call', async () => {
     let result = await runner.run({
       req: {
-        url: httpbin + 'ip',
+        url: testServerBase + 'simple',
         method: 'GET',
         headers: {},
       },
@@ -26,31 +115,36 @@ describe('Request Runner', () => {
   it('should work with a lower case method', async () => {
     let result = await runner.run({
       req: {
-        url: httpbin + 'ip',
+        url: testServerBase + 'method/get',
         method: 'get',
         headers: {},
       },
     });
+
+    assume(result.statusCode).equals(200);
+    assume(result.body.toString()).equals('GET');
   });
 
   it('should send headers correctly', async () => {
     let result = await runner.run({
       req: {
-        url: httpbin + 'headers',
+        url: testServerBase + 'header-repeat',
         method: 'get',
         headers: {
           'test-header': 'hi'
         },
       }
     });
+
+    console.dir(result.body.toString());
     result = JSON.parse(result.body);
 
-    assume(result.headers).has.property('Test-Header', 'hi');
+    assume(result.headers).has.property('test-header', 'hi');
   });
 
   it('should throw when a body should not be given', () => {
     return assertReject(runner.run({
-      url: httpbin + 'headers',
+      url: testServerBase + 'method/get',
       method: 'get',
       headers: {
         'test-header': 'hi'
@@ -62,7 +156,7 @@ describe('Request Runner', () => {
     it(`should return a ${status} HTTP Status Code correctly`, async () => {
       let result = await runner.run({
         req: {
-          url: httpbin + 'status/' + status,
+          url: testServerBase + 'status/' + status,
           method: 'get',
           headers: {},
         },
@@ -77,7 +171,7 @@ describe('Request Runner', () => {
     it(`should be able to ${method} data from a string body`, async () => {
       let result = await runner.run({
         req: {
-          url: httpbin + method,
+          url: testServerBase + 'echo-data/' + method,
           method: method,
           headers: {
             key: 'value',
@@ -86,14 +180,13 @@ describe('Request Runner', () => {
         body: 'abody' + method,
       });
       
-      let body = JSON.parse(result.body);
-      assume(body).has.property('data', 'abody' + method);
+      assume(JSON.parse(result.body).requestBody).equals('abody' + method);
     });
-    
+
     it(`should be able to ${method} data from a Buffer body`, async () => {
       let result = await runner.run({
         req: {
-          url: httpbin + method,
+          url: testServerBase + 'echo-data/' + method,
           method: method,
           headers: {
             key: 'value',
@@ -102,14 +195,13 @@ describe('Request Runner', () => {
         body: Buffer.from('abody' + method),
       });
       
-      let body = JSON.parse(result.body);
-      assume(body).has.property('data', 'abody' + method);
+      assume(JSON.parse(result.body).requestBody).equals('abody' + method);
     });
-
+    
     it(`should be able to ${method} data from a streaming body passed in`, async () => {
       let result = await runner.run({
         req: {
-          url: httpbin + method,
+          url: testServerBase + 'echo-data/' + method,
           method: method,
           headers: {
             key: 'value',
@@ -117,13 +209,11 @@ describe('Request Runner', () => {
         },
         body: fs.createReadStream(__dirname + '/../package.json')
       });
-
       
-      let body = JSON.parse(result.body);
-      assume(body).has.property('data',
-        fs.readFileSync(__dirname + '/../package.json').toString());
-    });  
-
+      assume(JSON.parse(result.body).requestBody)
+        .equals(fs.readFileSync(__dirname + '/../package.json').toString());
+    });
+        
     it(`should be able to ${method} data from a streaming body from function`, async () => {
       let bodyFactory = () => {
         return fs.createReadStream(__dirname + '/../package.json');
@@ -131,7 +221,7 @@ describe('Request Runner', () => {
 
       let result = await runner.run({
         req: {
-          url: httpbin + method,
+          url: testServerBase + 'echo-data/' + method,
           method: method,
           headers: {
             key: 'value',
@@ -140,17 +230,15 @@ describe('Request Runner', () => {
         body: bodyFactory,
       });
 
-      
-      let body = JSON.parse(result.body);
-      assume(body).has.property('data',
-        fs.readFileSync(__dirname + '/../package.json').toString());
+      assume(JSON.parse(result.body).requestBody)
+        .equals(fs.readFileSync(__dirname + '/../package.json').toString());
     });
   }
 
-  it('should be able to stream a response body', async () => {
+  it('should be able to stream a response body (checking output)', async () => {
     let result = await runner.run({
       req: {
-        url: httpbin + 'stream-bytes/10?seed=1234&chunk_size=1',
+        url: testServerBase + 'file',
         method: 'get',
         headers: {},
       },
@@ -170,14 +258,32 @@ describe('Request Runner', () => {
         chunks.push(chunk);
       });
 
-      result.bodyStream.on('end', () => {
+      result.bodyStream.once('end', () => {
         let body = Buffer.concat(chunks);
-        if (body.toString('base64') === '93AB6fCVqxXEPA==') {
+        let expected = fs.readFileSync(__dirname + '/../package.json');
+        if (body.toString() === expected.toString()) {
           resolve();
         } else {
-          reject();
+          reject(new Error('Body does not match'));
         }
       });
     });
+  });
+
+  it('should be able to stream a huge response body (ignoring output)', done => {
+    let result = runner.run({
+      req: {
+        url: testServerBase + 'file',
+        method: 'get',
+        headers: {},
+      },
+      streamingOutput: true,
+    }).then(result => {
+      let ws = fs.createWriteStream('/dev/null');
+      result.bodyStream.once('error', done);
+      ws.once('error', done);
+      result.bodyStream.pipe(ws);
+    }, done);;
+
   });
 });
