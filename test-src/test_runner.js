@@ -141,7 +141,6 @@ describe('Request Runner', () => {
       }
     });
 
-    console.dir(result.body.toString());
     result = JSON.parse(result.body);
 
     assume(result.headers).has.property('test-header', 'hi');
