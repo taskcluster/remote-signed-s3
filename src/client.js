@@ -84,8 +84,6 @@ class Client {
     let {filename, partsize} = opts;
     // Ensure we're copying the value and not changing it
     partsize = (partsize || this.partsize);
-    console.log(partsize);
-
 
     let sha256 = crypto.createHash('sha256');
     let filestats = await fs.stat(filename);
@@ -163,8 +161,6 @@ class Client {
       throw new Error('You must provide a size');
     }
 
-    console.dir({size, forceMP, forceSP, xyz: this.multiszie});
-
     if (forceMP && forceSP) {
       throw new Error('Forcing singlepart and multipart is mutually exclusive');
     } else if (forceMP) {
@@ -179,14 +175,12 @@ class Client {
   }
 
   async prepareUpload(opts) {
-    console.log('hi')
     opts = runSchema(opts, Joi.object().keys({
       filename: Joi.string().required(),
       forceMP: Joi.boolean().truthy(),
       forceSP: Joi.boolean().truthy(),
       partsize: Joi.number().max(5 * GB).default(this.partsize),
     }).without('forceSP', 'forceMP'));
-    console.log('validated')
     let {filename, partsize, forceMP, forceSP} = opts;
 
     let filesize = (await fs.stat(filename)).size;
