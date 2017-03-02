@@ -19,29 +19,33 @@ process.on('unhandledRejection', err => {
 
 const bigfile = __dirname + '/../bigfile';
 
-describe('S3 Client', () => {
+describe('Controller', () => {
   let controller;
   let server;
   let bucket = 'test-bucket';
   let key = 'test-key';
   let port = process.env.PORT || 8080;
 
-  let bigfilehash;
   let bigfilesize;
+  let bigfilehash;
+
+  let apitests;
 
   before(done => {
     let ds = new DigestStream();
     let rs = fs.createReadStream(bigfile);
+    let ws = fs.createWriteStream('/dev/null');
 
     ds.on('error', done);
     rs.on('error', done);
-    
-    rs.pipe(ds).pipe(fs.createWriteStream('/dev/null'));
+    ws.on('error', done);
 
-    ds.on('finish', () => {
+    rs.pipe(ds).pipe(ws);
+
+    ds.on('end', () => {
       try {
-        bigfilehash = ds.hash;
         bigfilesize = ds.size;
+        bigfilehash = ds.hash;
         done();
       } catch (err) {
         done(err);
@@ -49,57 +53,70 @@ describe('S3 Client', () => {
     });
   });
 
-  beforeEach(async () => {
+  beforeEach(done => {
     controller = new Controller();
     controller.s3host = 'localhost';
     controller.s3protocol = 'http:';
     controller.s3port = port;
-  });
-
-  afterEach(async () => {
     if (server) {
-      await new Promise((resolve, reject) => {
-        server.close(resolve);
+      server.close(err => {
+        server = undefined;
+        done(err);
       });
+    } else {
+      done();
     }
-    server = undefined;
   });
 
-  describe('S3 Api', () => {
+  after(done => {
+    if (server) {
+      server.close(err => {
+        server = undefined;
+        done(err);
+      });
+    } else {
+      done();
+    }
+  });
 
-    // Here's the list of tests we want.  Note that bucket
-    // and key are automagically added to params, so only
-    // include params which aren't bucket or key
+  describe('S3', () => {
+
+    // Here's the list of tests we want.  Note that bucket and key are
+    // automagically added to params, so only include params which aren't
+    // bucket or key
+    // 
+    // NOTE: We have to specify params as a function because these are often
+    // things (e.g. sha256 hashes) which we need to calculate in before() or
+    // beforeEach() sections.  If we didn't make this as a function, we'd only
+    // get the value that was generated. This is because we call it() in a loop 
     let tests = [
       {
         name: 'Initiate Multipart',
         type: 'initiateMPUpload',
         func: 'initiateMultipartUpload',
-        params: {
-          sha256: bigfilehash,
-          size: bigfilesize,
+        params: () => {
+          return {sha256: bigfilehash, size: bigfilesize};
         }
       }, {
         name: 'Complete Multipart',
         type: 'completeMPUpload',
         func: 'completeMultipartUpload',
-        params: {
-          etags: ['an-etag'],
-          uploadId: 'an-uploadId',
+        params: () => {
+          return {etags: ['an-etag'], uploadId: 'an-uploadId'};
         }
       }, {
         name: 'Abort Multipart',
         type: 'abortMPUpload',
         func: 'abortMultipartUpload',
-        params: {
-          uploadId: 'an-uploadId',
+        params: () => {
+          return {uploadId: 'an-uploadId'};
         }
       }, {
         name: 'Tag Object',
         type: 'tagObject',
         func: '__tagObject',
-        params: {
-          tags: {car: 'fast', money: 'lots'},
+        params: () => {
+          return {tags: {car: 'fast', money: 'lots'}};
         }
       },
     ];
@@ -108,7 +125,13 @@ describe('S3 Client', () => {
       let {name, type, params, func} = _test;
       describe(name, () => {
 
+        // Because we call it() in a loop
+        before(() => {
+          params = params();
+        });
+
         it(`should call the ${name} API Correctly`, async () => {
+          console.dir(bigfilehash);
           return new Promise(async (pass, fail) => {
             server = await createMockS3Server({
               key,

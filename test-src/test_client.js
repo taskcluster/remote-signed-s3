@@ -16,22 +16,25 @@ describe('Client', () => {
   let client;
   let server;
 
-  let bigfilehash;
   let bigfilesize;
+  let bigfilehash;
 
   before(done => {
     let ds = new DigestStream();
     let rs = fs.createReadStream(bigfile);
+    let ws = fs.createWriteStream('/dev/null');
 
     ds.on('error', done);
     rs.on('error', done);
-    
-    rs.pipe(ds).pipe(fs.createWriteStream('/dev/null'));
+    ws.on('error', done);
 
-    ds.on('finish', () => {
+    rs.pipe(ds).pipe(ws);
+
+    ds.on('end', () => {
       try {
-        bigfilehash = ds.hash;
         bigfilesize = ds.size;
+        bigfilehash = ds.hash;
+        bigfileinfo.set(ds.hash, ds.size);
         done();
       } catch (err) {
         done(err);
@@ -39,14 +42,31 @@ describe('Client', () => {
     });
   });
 
-
-  beforeEach(() => {
+  beforeEach(done => {
     client = new Client();
     if (server) {
-      server.close();
+      server.close(err => {
+        server = undefined;
+        done(err);
+      });
+    } else {
+      done();
     }
   });
-  
+
+  after(done => {
+    if (server) {
+      server.close(err => {
+        server = undefined;
+        done(err);
+      });
+    } else {
+      done();
+    }
+  });
+
+
+
   describe('Determining upload type', () => {
     it('should pick singlepart for a small file', () => {
       assume(client.__useMulti(1)).to.be.false();
