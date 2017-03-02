@@ -34,7 +34,6 @@ describe('Client', () => {
       try {
         bigfilesize = ds.size;
         bigfilehash = ds.hash;
-        bigfileinfo.set(ds.hash, ds.size);
         done();
       } catch (err) {
         done(err);

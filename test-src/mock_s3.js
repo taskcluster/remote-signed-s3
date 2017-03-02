@@ -52,7 +52,7 @@ async function createMockS3Server(opts) {
     'abortMPUpload',
     'tagObject',
     'generate200Error',
-    'generate400Error',
+    'generate403Error',
   ];
 
   if (requestTypes.indexOf(requestType) === -1) {
@@ -244,11 +244,27 @@ async function createMockS3Server(opts) {
                 Connection: 'keep-alive',
                 Server: 'AmazonS3',       
               }
+              break;
             /////////////////////////////////////////////////////////////
-            case 'generate400Error':
-              // NOTE: THE FALLTHROUGH OF THE SWITCH
+            case 'generate403Error':
               statusCode = 403;
               statusMessage = 'Forbidden';
+              body = [
+                '<Error>',
+                '  <Code>InternalError</Code>',
+                '  <Message>We encountered an internal error. Please try again.</Message>',
+                '  <RequestId>656c76696e6727732072657175657374</RequestId>',
+                '  <HostId>Uuag1LuByRx9e6j5Onimru9pO4ZVKnJ2Qz7/C1NPcfTWAtRPfTaOFg==</HostId>',
+                '</Error>',
+              ].join('\n');
+              headers = {
+                'x-amz-id-2': 'Uuag1LuByRx9e6j5Onimru9pO4ZVKnJ2Qz7/C1NPcfTWAtRPfTaOFg==',
+                'x-amz-request-id': '656c76696e6727732072657175657374',
+                Date: new Date().toGMTString(),
+                'Content-Length': body.length,
+                Connection: 'keep-alive',
+                Server: 'AmazonS3',       
+              }
               break;
             case 'tagObject':
               if (request.method !== 'PUT') {
@@ -316,7 +332,6 @@ async function createMockS3Server(opts) {
   // Ensure that the server has started up before continuing
   await new Promise((resolve, reject) => {
     server.listen(port, 'localhost', () => {
-      console.log('listening on ' + port);
       resolve();
     })
   });

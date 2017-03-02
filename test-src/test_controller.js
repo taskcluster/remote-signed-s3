@@ -12,11 +12,6 @@ const InterchangeFormat = require('../lib/interchange-format');
 
 const createMockS3Server = require('./mock_s3');
 
-process.on('unhandledRejection', err => {
-  console.dir(err.stack || err);
-  throw err;
-});
-
 const bigfile = __dirname + '/../bigfile';
 
 describe('Controller', () => {
@@ -130,8 +125,7 @@ describe('Controller', () => {
           params = params();
         });
 
-        it(`should call the ${name} API Correctly`, async () => {
-          console.dir(bigfilehash);
+        it(`should call the ${name} API Correctly`, () => {
           return new Promise(async (pass, fail) => {
             server = await createMockS3Server({
               key,
@@ -151,29 +145,31 @@ describe('Controller', () => {
           });
         });
         
-        for (let _errorCode of [200, 400]) {
-          it(`should fail with a ${_errorCode} error`, async () => {
+        for (let _errorCode of [200, 403]) {
+          it(`should fail with a ${_errorCode} error`, () => {
             return new Promise(async (pass, fail) => {
-              try {
-                server = await createMockS3Server({
-                  key,
-                  bucket,
-                  requestType: `generate${_errorCode}Error`,
-                  port,
-                });
-              } catch (err) {
-                assume(err.message).match(/^Error: We encountered an internal error/);
-                return pass(err);
-              }
+              server = await createMockS3Server({
+                key,
+                bucket,
+                requestType: `generate${_errorCode}Error`,
+                port,
+              });
 
-              server.once('unittest-success', pass);
+              //server.once('unittest-success', pass);
               server.once('unittest-failure', fail);
 
               let args = {key, bucket};
               for (let k in params) {
                 args[k] = params[k];
               }
-              let result = await controller[func](args);
+              let result;
+              try {
+                let result = await controller[func](args);
+                fail(new Error('should have failed'));
+              } catch (err) {
+                assume(err.message).matches(/We encountered an internal error. Please try again/);
+                pass();
+              }
             });
           });
         }
