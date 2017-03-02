@@ -88,7 +88,7 @@ class Controller {
    * </CompleteMultipartUpload>
    */
   __generateCompleteUploadBody(etags) {
-    etags = runSchema(etags, Joi.array().items(Joi.string()).min(1).max(10000));
+    etags = runSchema(etags, Joi.array().items(Joi.string()).min(1).max(10000).required());
     let doc = new libxml.Document();
 
     let ctx = doc.node('CompleteMultipartUpload');
@@ -127,7 +127,7 @@ class Controller {
   __generateTagSetBody(tags) {
     // TODO: Figure out how to double check that all keys and values
     // match a pattern or something
-    tags = runSchema(tags, Joi.object());
+    tags = runSchema(tags, Joi.object().required());
 
     let doc = new libxml.Document();
 
@@ -203,7 +203,7 @@ class Controller {
   // Return a list of 2-tuple's that are header key and value pairings for the
   // headers to specify as the ACL for an object
   __determinePermissionsHeaders(permissions) {
-    permissions = runSchema(permissions, schemas['permissions']);
+    permissions = runSchema(permissions, schemas.permissions.required());
     let {acl, read, write, readAcp, writeAcp, fullControl} = permissions;
     if (acl) {
       return [['x-amz-acl', permissions.acl]];
@@ -250,10 +250,10 @@ class Controller {
   async initiateMultipartUpload(opts) {
 
     opts = runSchema(opts, Joi.object().keys({
-      bucket: schemas.bucket,
-      key: schemas.key,
-      sha256: schemas.sha256,
-      size: schemas.mpSize,
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      sha256: schemas.sha256.required(),
+      size: schemas.mpSize.required(),
       permissions: schemas.permissions,
     }).optionalKeys('permissions'));
 
@@ -282,11 +282,13 @@ class Controller {
     // If we have permissions, set those values on the headers
     if (permissions) {
       let permHeaders = this.__determinePermissionsHeaders(permissions);
+      console.dir(permHeaders);
       for (let tuple of permHeaders) {
         unsignedRequest.headers[tuple[0]] = tuple[1];
       }
     }
 
+    console.dir(unsignedRequest);
     let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
@@ -317,10 +319,10 @@ class Controller {
    */
   async generateMultipartRequest(opts) {
     opts = runSchema(opts, Joi.object().keys({
-      bucket: schemas.bucket,
-      key: schemas.key,
-      uploadId: Joi.string(),
-      parts: schemas.parts,
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      uploadId: Joi.string().required(),
+      parts: schemas.parts.required(),
     }));
 
     let {bucket, key, uploadId, parts} = opts;
@@ -367,9 +369,9 @@ class Controller {
    */
   async __tagObject(opts) {
     opts = runSchema(opts, Joi.object().keys({
-      bucket: schemas.bucket,
-      key: schemas.key,
-      tags: schemas.tags,
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      tags: schemas.tags.required(),
     }));
 
     let {bucket, key, tags} = opts;
@@ -405,11 +407,11 @@ class Controller {
    */
   async completeMultipartUpload(opts) {
     opts = runSchema(opts, Joi.object({
-      bucket: schemas.bucket,
-      key: schemas.key,
-      etags: schemas.etags,
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      etags: schemas.etags.required(),
       tags: schemas.tags,
-      uploadId: schemas.uploadId,
+      uploadId: schemas.uploadId.required(),
     }).optionalKeys('tags'));
 
     let {bucket, key, uploadId, etags, tags} = opts;
@@ -457,9 +459,9 @@ class Controller {
   // http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
   async abortMultipartUpload(opts) {
    opts = runSchema(opts, Joi.object({
-     bucket: schemas.bucket,
-     key: schemas.key,
-     uploadId: schemas.uploadId,
+     bucket: schemas.bucket.required(),
+     key: schemas.key.required(),
+     uploadId: schemas.uploadId.required(),
    }));
 
     let {bucket, key, uploadId} = opts;
@@ -494,10 +496,10 @@ class Controller {
    */
   async generateSinglepartRequest(opts) {
     opts = runSchema(opts, Joi.object().keys({
-      bucket: schemas.bucket,
-      key: schemas.key,
-      sha256: schemas.sha256,
-      size: schemas.spSize,
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      sha256: schemas.sha256.required(),
+      size: schemas.spSize.required(),
       tags: schemas.tags,
       permissions: schemas.permissions,
     }).optionalKeys('tags', 'permissions'));

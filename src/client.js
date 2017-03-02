@@ -203,10 +203,10 @@ class Client {
    */
   async runUpload(request, upload) {
     upload = runSchema(upload, Joi.object().keys({
-      filename: Joi.string(),
-      sha256: schemas.sha256,
-      size: Joi.number(),
-      parts: schemas.parts,
+      filename: Joi.string().required(),
+      sha256: schemas.sha256.required(),
+      size: Joi.number().required(),
+      parts: schemas.parts.required(),
     }).optionalKeys('parts'));
 
     let {filename, sha256, size, parts} = upload;
