@@ -54,6 +54,9 @@ const schemas = {
   etags: Joi.array().min(1).max(10000).items(Joi.string()),
   tags: Joi.object(),
   metadata: Joi.object(),
+  contentType: Joi.string().default('binary/octet-stream'),
+  contentDisposition: Joi.string(),
+  contentEncoding: Joi.string(),
   storageClass: Joi.string().valid(storageClasses).default('STANDARD'),
 };
 

@@ -323,9 +323,23 @@ class Controller {
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
       metadata: schemas.metadata,
+      contentType: schemas.contentType,
+      contentDisposition: schemas.contentDisposition,
+      contentEncoding: schemas.contentEncoding,
     }).optionalKeys('permissions', 'metadata'));
 
-    let {bucket, key, sha256, size, permissions, storageClass, metadata} = opts;
+    let {
+      bucket,
+      key,
+      sha256,
+      size,
+      permissions,
+      storageClass,
+      metadata,
+      contentType,
+      contentDisposition,
+      contentEncoding,
+    } = opts;
 
     if (size <= 0) {
       // Each part must have a non-zero size
@@ -341,6 +355,16 @@ class Controller {
     });
 
     headers['x-amz-storage-class'] = storageClass;
+
+    if (contentType) {
+      headers['content-type'] = contentType;
+    }
+    if (contentEncoding) {
+      headers['content-encoding'] = contentEncoding;
+    }
+    if (contentDisposition) {
+      headers['content-disposition'] = contentDisposition;
+    }
 
     // If we have permissions, set those values on the headers
     if (permissions) {
@@ -584,9 +608,24 @@ class Controller {
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
       metadata: schemas.metadata,
+      contentType: schemas.contentType,
+      contentDisposition: schemas.contentDisposition,
+      contentEncoding: schemas.contentEncoding,
     }).optionalKeys('tags', 'permissions', 'metadata'));
 
-    let {bucket, key, sha256, size, tags, permissions, storageClass, metadata} = opts;
+    let {
+      bucket,
+      key,
+      sha256,
+      size,
+      tags,
+      permissions,
+      storageClass,
+      metadata,
+      contentType,
+      contentDisposition,
+      contentEncoding,
+    } = opts;
 
     this.__validateTags(tags);
 
@@ -598,6 +637,17 @@ class Controller {
     headers['x-amz-storage-class'] = storageClass;
     headers['x-amz-content-sha256'] = sha256;
     headers['content-length'] = Number(size).toString(10);
+
+    if (contentType) {
+      headers['content-type'] = contentType;
+    }
+    if (contentEncoding) {
+      headers['content-encoding'] = contentEncoding;
+    }
+    if (contentDisposition) {
+      headers['content-disposition'] = contentDisposition;
+    }
+
 
     if (tags) {
       headers['x-amz-tagging'] = qs.stringify(tags);

@@ -321,6 +321,49 @@ describe('Controller', () => {
         assume(arg.req.headers).has.property('x-amz-meta-number', '123');
       });
 
+
+      it('should set the other content headers correctly', async () => {
+        let runner = sandbox.mock();
+        runner.once();
+        controller.runner = runner;
+
+        runner.returns({
+          body: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+            '  <Bucket>bucket</Bucket>',
+            '  <Key>key</Key>',
+            '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+            '</InitiateMultipartUploadResult>',
+          ].join('\n'),
+          headers: {},
+          statusCode: 200,
+          statusMessage: 'OK',
+        });
+
+        let result = await controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          size: 1,
+          contentType: 'content-type',
+          contentDisposition: 'content-disposition',
+          contentEncoding: 'content-encoding',
+        });
+
+        runner.verify();
+
+        assume(runner.firstCall.args).is.array();
+        assume(runner.firstCall.args).has.lengthOf(1);
+        let arg = runner.firstCall.args[0];
+        assume(arg.req).has.property('method', 'POST');
+        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('headers');
+        assume(arg.req.headers).has.property('content-type', 'content-type');
+        assume(arg.req.headers).has.property('content-disposition', 'content-disposition');
+        assume(arg.req.headers).has.property('content-encoding', 'content-encoding');
+      });
+
     });
   });
 
@@ -640,6 +683,21 @@ describe('Controller', () => {
       });
     }
 
+    it('should set other http headers correctly', async () => {
+      let result = await controller.generateSinglepartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        sha256: sha256,
+        size: 1,
+        contentType: 'content-type',
+        contentEncoding: 'content-encoding',
+        contentDisposition: 'content-disposition',
+      });
+      assume(result.headers).has.property('content-type', 'content-type');
+      assume(result.headers).has.property('content-encoding', 'content-encoding');
+      assume(result.headers).has.property('content-disposition', 'content-disposition');
+    });
+      
     it('should set metadata headers correctly', async () => {
       let result = await controller.generateSinglepartRequest({
         bucket: 'bucket',
