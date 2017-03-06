@@ -405,6 +405,71 @@ describe('Controller', () => {
     });
   });
 
+  describe.only('S3 Object Tag Validation', () => {
+    // We want to ensure that our valid key is 128 chars that are outside of
+    // the ascii range.  This ensures that count is by unicode char and not by
+    // byte
+    let validkey = [
+      '☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭',
+      '☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭',
+      '☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭',
+      '☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭☭',
+    ].join('');
+    if (validkey.length !== 128) {
+      throw new Error();
+    }
+
+    // We want to add the minimal amount to the string to cause a failure. In
+    // this case, it's a single char in the ascii range
+    let invalidkey = validkey + 'a';
+
+    // Valid values are just 2x a key
+    let validvalue = validkey + validkey;
+    let invalidvalue = validvalue + 'a';
+   
+    it('should not throw for valid keys and values', async () => {
+      let tags = {};
+      tags[validkey] = validvalue;
+      controller.__validateTags(tags);
+    });
+
+    it('should throw for too many keys', () => {
+      let tags = {
+        a: '1',
+        b: '2',
+        c: '3',
+        d: '4',
+        e: '5',
+        f: '6',
+        g: '7',
+        h: '8',
+        i: '9',
+        j: '10',
+      }
+      controller.__validateTags(tags);
+      tags.k = '11';
+      assume(() => {
+        controller.__validateTags(tags);
+      }).throws(/S3 allows no more than 10 tags/);
+    });
+ 
+    it('should throw for invalid keys', () => {
+      assume(() => {
+        let tags = {};
+        tags[invalidkey] = validvalue;
+        controller.__validateTags(tags);
+      }).throws(/^S3 object tag keys/);
+    });
+
+    it('should throw for invalid values', () => {
+      assume(() => {
+        let tags = {};
+        tags[validkey] = invalidvalue;
+        controller.__validateTags(tags);
+      }).throws(/^S3 object tag values/);
+    });
+  });
+
   describe('Generate Single Part Request', () => {
     let sha256 = crypto.createHash('sha256').update('single part').digest('hex');
 

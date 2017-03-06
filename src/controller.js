@@ -366,6 +366,24 @@ class Controller {
     return requests;
   }
 
+  // NOTE: If we can do this with Joi, I'd prefer that
+  // http://docs.aws.amazon.com/AmazonS3/latest/dev/object-tagging.html
+  __validateTags(tags) {
+    if (Object.keys(tags).length > 10) {
+      throw new Error('S3 allows no more than 10 tags on an object');
+    }
+
+    for (let tag in tags) {
+      if (tag.toString('utf8').length > 128) {
+        throw new Error('S3 object tag keys must be 128 or fewer characters');
+      }
+      if (tags[tag].toString('utf8').length > 256) {
+        throw new Error('S3 object tag values must be 256 or fewer characters');
+      }
+    }
+
+  }
+
   /**
    * This method is used to tag resources, and only after completion.  This is
    * done to maintain parity with single part uploads and should *not* be
@@ -384,6 +402,8 @@ class Controller {
     }));
 
     let {bucket, key, tags} = opts;
+
+    this.__validateTags(tags);
 
     let requestBody = this.__generateTagSetBody(tags);
 
@@ -522,6 +542,8 @@ class Controller {
     }).optionalKeys('tags', 'permissions'));
 
     let {bucket, key, sha256, size, tags, permissions, storageClass} = opts;
+
+    this.__validateTags(tags);
 
     let headers = {
       'content-length': size,
