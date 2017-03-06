@@ -279,70 +279,113 @@ describe('Controller', () => {
         });
       }
 
-      describe('Metadata', () => {
-        it('should work for a single object', () => {
-          let actual = controller.__generateMetadataHeaders({
-            a: 'string',
-            b: 123,
-          });
+      it('should set metadata headers correctly', async () => {
+        let runner = sandbox.mock();
+        runner.once();
+        controller.runner = runner;
 
-          assume(actual).to.deeply.equal({'x-amz-meta-a': 'string', 'x-amz-meta-b': '123'});
-        });
-        
-        it('should work for multiple object', () => {
-          let actual = controller.__generateMetadataHeaders({a:1}, {b:2}, {c:3});
-          let expected = {
-            'x-amz-meta-a': '1',
-            'x-amz-meta-b': '2',
-            'x-amz-meta-c': '3',
-          };
-
-          assume(actual).to.deeply.equal(expected);
+        runner.returns({
+          body: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+            '  <Bucket>bucket</Bucket>',
+            '  <Key>key</Key>',
+            '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+            '</InitiateMultipartUploadResult>',
+          ].join('\n'),
+          headers: {},
+          statusCode: 200,
+          statusMessage: 'OK',
         });
 
-        it('should throw when trying to define key twice', () => {
-          assume(() => {
-            controller.__generateMetadataHeaders({a:1}, {a:2});
-          }).throws('Attempting to define a in metadata twice');
+        let result = await controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          size: 1,
+          metadata: {
+            string: 'string',
+            number: 123
+          },
         });
 
-        it('should throw for a value that is too big', () => {
-          let bytes = 2048 - 'x-amz-meta-a'.length;
-          let max = Buffer.alloc(bytes, 'a').toString('utf8');
-          controller.__generateMetadataHeaders({a: max});
+        runner.verify();
 
-          max = max + 'a';
-
-          assume(() => {
-            controller.__generateMetadataHeaders({a: max});
-          }).throws(/Metadata exceeds 2048 byte/);
-
-        });
-
-        it('should throw a boolean value', () => {
-          assume(() => {
-            controller.__generateMetadataHeaders({a: true});
-          }).throws(/Metadata values must be string/);
-        });
-        it('should throw an undefined value', () => {
-          assume(() => {
-            controller.__generateMetadataHeaders({a: undefined});
-          }).throws(/Metadata values must be string/);
-        });
-        it('should throw an object value', () => {
-          assume(() => {
-            controller.__generateMetadataHeaders({a: {b:1}});
-          }).throws(/Metadata values must be string/);
-        });
-        it('should throw a function value', () => {
-          assume(() => {
-            controller.__generateMetadataHeaders({a: () => {}});
-          }).throws(/Metadata values must be string/);
-        });
-
-
+        assume(runner.firstCall.args).is.array();
+        assume(runner.firstCall.args).has.lengthOf(1);
+        let arg = runner.firstCall.args[0];
+        assume(arg.req).has.property('method', 'POST');
+        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('headers');
+        assume(arg.req.headers).has.property('x-amz-meta-string', 'string');
+        assume(arg.req.headers).has.property('x-amz-meta-number', '123');
       });
+
     });
+  });
+
+  describe('Metadata', () => {
+    it('should work for a single object', () => {
+      let actual = controller.__generateMetadataHeaders({
+        a: 'string',
+        b: 123,
+      });
+
+      assume(actual).to.deeply.equal({'x-amz-meta-a': 'string', 'x-amz-meta-b': '123'});
+    });
+    
+    it('should work for multiple object', () => {
+      let actual = controller.__generateMetadataHeaders({a:1}, {b:2}, {c:3});
+      let expected = {
+        'x-amz-meta-a': '1',
+        'x-amz-meta-b': '2',
+        'x-amz-meta-c': '3',
+      };
+
+      assume(actual).to.deeply.equal(expected);
+    });
+
+    it('should throw when trying to define key twice', () => {
+      assume(() => {
+        controller.__generateMetadataHeaders({a:1}, {a:2});
+      }).throws('Attempting to define a in metadata twice');
+    });
+
+    it('should throw for a value that is too big', () => {
+      let bytes = 2048 - 'x-amz-meta-a'.length;
+      let max = Buffer.alloc(bytes, 'a').toString('utf8');
+      controller.__generateMetadataHeaders({a: max});
+
+      max = max + 'a';
+
+      assume(() => {
+        controller.__generateMetadataHeaders({a: max});
+      }).throws(/Metadata exceeds 2048 byte/);
+
+    });
+
+    it('should throw a boolean value', () => {
+      assume(() => {
+        controller.__generateMetadataHeaders({a: true});
+      }).throws(/Metadata values must be string/);
+    });
+    it('should throw an undefined value', () => {
+      assume(() => {
+        controller.__generateMetadataHeaders({a: undefined});
+      }).throws(/Metadata values must be string/);
+    });
+    it('should throw an object value', () => {
+      assume(() => {
+        controller.__generateMetadataHeaders({a: {b:1}});
+      }).throws(/Metadata values must be string/);
+    });
+    it('should throw a function value', () => {
+      assume(() => {
+        controller.__generateMetadataHeaders({a: () => {}});
+      }).throws(/Metadata values must be string/);
+    });
+
+
   });
 
   describe('Generate Multipart Request', () => {
@@ -597,7 +640,7 @@ describe('Controller', () => {
       });
     }
 
-    it.only('should set metadata headers correctly', async () => {
+    it('should set metadata headers correctly', async () => {
       let result = await controller.generateSinglepartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -608,7 +651,8 @@ describe('Controller', () => {
           number: 123,
         }
       });
-      console.dir(result);
+      assume(result.headers).has.property('x-amz-meta-string', 'string');
+      assume(result.headers).has.property('x-amz-meta-number', '123');
     });
 
     it('should not allow size <= 0', () => {
