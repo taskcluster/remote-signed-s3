@@ -194,7 +194,7 @@ describe('XML Generation', () => {
     assume(actual).equals(expected);
   });
 
-  describe.only('Injection', () => {
+  describe('Injection', () => {
     // Since this is the only place in the system that we take untrusted input from a
     // machine and stick it into XML, this is where we're testing for injection.  The only
     // types of injection we 

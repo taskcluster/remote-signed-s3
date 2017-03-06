@@ -38,6 +38,7 @@ class Controller {
       region: Joi.string().default('us-east-1'),
       runner: Joi.any(),
       runnerOpts: Joi.object(),
+      vhostAddressing: Joi.boolean().default(true),
     }).without('runner', 'runnerOpts').optionalKeys(['runner', 'runnerOpts']));
 
     this.region = opts.region;
@@ -51,12 +52,14 @@ class Controller {
     }
 
     this.runner = runner;
+    this.vhostAddressing = opts.vhostAddressing;
+
     // http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
     let s3region = this.region === 'us-east-1' ? 's3' : 's3-' + this.region;
     this.s3host = `${s3region}.amazonaws.com`;
 
     // These values are used for unit testing to direct the 
-    this.s3protocol = 'https:';
+    this.s3protocol = undefined;
     this.s3port = undefined;
   }
 
@@ -300,12 +303,53 @@ class Controller {
     return headers;
   }
 
-  __s3hostname(bucket) {
-    let hostname = `${bucket}.${this.s3host}`;
+  // Generate the base request object for signing.  We don't want to duplicate
+  // this logic everywhere
+  __generateRequestBase(opts) {
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket.required(),
+      key: schemas.bucket.required(),
+      method: Joi.string().required(),
+      query: Joi.string(),
+      headers: Joi.object().default({}),
+    }).optionalKeys('query'));
+
+    let {bucket, key, method, query, headers} = opts;
+    let path;
+    let hostname;
+
+    // To support non-vhost style addresses
+    if (this.vhostAddressing) {
+      path = '/' + key;
+      hostname = `${bucket}.${this.s3host}`;
+    } else {
+      path = `/${bucket}/${key}`;
+      hostname = this.s3host;
+    }
+
     if (this.s3port) {
       hostname += ':' + this.s3port;
     }
-    return hostname;
+    
+    // We always add the query string if present
+    if (query) {
+      path += '?' + query;
+    }
+
+    let request = {
+      region: this.region,
+      service: 's3',
+      method: method,
+      protocol: this.s3protocol,
+      hostname: hostname,
+      path: path,
+    }
+
+    if (headers) {
+      request.headers = headers;
+    }
+
+    return request;
   }
  
   /**
@@ -374,16 +418,14 @@ class Controller {
       }
     }
 
-    let signedRequest = aws4.sign({
-      service: 's3',
-      region: this.region,
+    let signedRequest = aws4.sign(this.__generateRequestBase({
+      bucket,
+      key,
       method: 'POST',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
-      path: `/${key}?uploads=`,
+      query: 'uploads=',
       headers: headers,
-    });
-
+    }));
+    
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest)
     });
@@ -433,18 +475,16 @@ class Controller {
         throw new Error(`Part ${num}/${parts.length} must be more than 5MB, except last`);
       }
 
-      let signedRequest = aws4.sign({
-        service: 's3',
-        region: this.region,
+      let signedRequest = aws4.sign(this.__generateRequestBase({
+        bucket,
+        key,
         method: 'PUT',
-        protocol: this.s3protocol,
-        hostname: this.__s3hostname(bucket),
-        path: `/${key}?partNumber=${num}&uploadId=${uploadId}`,
+        query: `partNumber=${num}&uploadId=${uploadId}`,
         headers: {
           'x-amz-content-sha256': part.sha256,
           'content-length': part.size,
         },
-      });
+      }));
 
       requests.push(this.__serializeRequest(signedRequest));
     }
@@ -475,21 +515,21 @@ class Controller {
 
     let requestBody = this.__generateTagSetBody(tags);
 
-    let signedRequest = aws4.sign({
-      service: 's3',
-      region: this.region,
+    let unsignedRequest = this.__generateRequestBase({
+      bucket,
+      key,
       method: 'PUT',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
-      path: `/${key}?tagging=`,
-      body: requestBody,
+      query: 'tagging=',
     });
+
+    unsignedRequest.body = requestBody;
+    
+    let signedRequest = aws4.sign(unsignedRequest);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
       body: requestBody,
     });
-
 
     parseS3Response(response.body);
 
@@ -523,18 +563,16 @@ class Controller {
     let requestBody = this.__generateCompleteUploadBody(etags);
     let requestBodySha256 = crypto.createHash('sha256').update(requestBody);
 
-    let signedRequest = aws4.sign({
-      service: 's3',
-      region: this.region,
+    let signedRequest = aws4.sign(this.__generateRequestBase({
+      bucket,
+      key,
       method: 'POST',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
-      path: `/${key}?uploadId=${uploadId}`,
+      query: `uploadId=${uploadId}`,
       headers: {
         'X-Amz-Content-Sha256': requestBodySha256.digest('hex'),
         'Content-Length': requestBody.length,
       },
-    });
+    }));
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -565,18 +603,17 @@ class Controller {
    }));
 
     let {bucket, key, uploadId} = opts;
-    let signedRequest = aws4.sign({
-      service: 's3',
-      region: this.region,
+
+    let signedRequest = aws4.sign(this.__generateRequestBase({
+      bucket,
+      key,
       method: 'DELETE',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
       headers: {
         'content-length': 0,
         'x-amx-content-sha256': emptysha256,
       },
-      path: `/${key}?uploadId=`,
-    });
+      query: 'uploadId=',
+    }));
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -660,15 +697,12 @@ class Controller {
       }
     }
 
-    let signedRequest = aws4.sign({
-      service: 's3',
-      region: this.region,
+    let signedRequest = aws4.sign(this.__generateRequestBase({
+      bucket,
+      key,
       method: 'PUT',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
-      path: `/${key}`,
       headers: headers,
-    });
+    }));
 
     return this.__serializeRequest(signedRequest);
   }

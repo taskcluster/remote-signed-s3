@@ -195,6 +195,168 @@ describe('Controller', () => {
     });
   });
 
+  describe('Base URL Generation', () => {
+    beforeEach(() => {
+      controller.s3protocol = 'https:';
+      controller.s3host = 'localhost';
+      controller.s3port = 8080;
+    });
+
+    it('vhost addressing without headers or query', () => {
+      controller.vhostAddressing = true;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'bucket.localhost:8080',
+        path: '/key',
+        headers: {},
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+    
+    it('path addressing without headers or query', () => {
+      controller.vhostAddressing = false;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'localhost:8080',
+        path: '/bucket/key',
+        headers: {},
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+
+    it('vhost addressing without query', () => {
+      controller.vhostAddressing = true;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'bucket.localhost:8080',
+        path: '/key',
+        headers: {
+          'content-length': '123',
+        }
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+        headers: {
+          'content-length': '123',
+        }
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+    
+    it('path addressing without query', () => {
+      controller.vhostAddressing = false;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'localhost:8080',
+        path: '/bucket/key',
+        headers: {
+          'content-length': '123',
+        }
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+        headers: {
+          'content-length': '123',
+        }
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+    
+    it('vhost addressing with query', () => {
+      controller.vhostAddressing = true;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'bucket.localhost:8080',
+        path: '/key?key1=value1&emptykey=&key2=value2',
+        headers: {
+          'content-length': '123',
+        }
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+        query: 'key1=value1&emptykey=&key2=value2',
+        headers: {
+          'content-length': '123',
+        }
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+    
+    it('path addressing with query', () => {
+      controller.vhostAddressing = false;
+
+      let expected = {
+        region: 'us-east-1',
+        service: 's3',
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'localhost:8080',
+        path: '/bucket/key?key1=value1&emptykey=&key2=value2',
+        headers: {
+          'content-length': '123',
+        }
+      };
+
+      let actual = controller.__generateRequestBase({
+        bucket: 'bucket',
+        key: 'key',
+        method: 'POST',
+        query: 'key1=value1&emptykey=&key2=value2',
+        headers: {
+          'content-length': '123',
+        }
+      });
+
+      assume(actual).deeply.equals(expected);
+    });
+  });
+
   describe('API Special checks', () => {
     describe('Initiate Multipart Upload', () => {
       it('should not allow parts with size <= 0', () => {
