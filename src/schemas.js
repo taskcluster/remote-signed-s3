@@ -17,6 +17,14 @@ const cannedACLs = [
   'bucket-owner-read',
   'bucket-owner-full-control',
 ];
+
+// This is the list of valid storage classes
+const storageClasses = [
+  'STANDARD',
+  'STANDARD_IA',
+  'REDUCED_REDUNDANCY',
+];
+
 /**
  * Joi schema to represent Permissions objects
  *
@@ -45,6 +53,7 @@ const schemas = {
   uploadId: Joi.string(),
   etags: Joi.array().min(1).max(10000).items(Joi.string()),
   tags: Joi.object(),
+  storageClass: Joi.string().valid(storageClasses).default('STANDARD'),
 };
 
 // These are the schemas which reference other schemas

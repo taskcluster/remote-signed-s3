@@ -3,6 +3,7 @@ const http = require('http');
 //const https = require('https');
 const urllib = require('url');
 const fs = require('fs');
+const sinon = require('sinon');
 
 const assume = require('assume');
 const { Controller, parseS3Response } = require('../');
@@ -20,6 +21,7 @@ describe('Controller', () => {
   let bucket = 'test-bucket';
   let key = 'test-key';
   let port = process.env.PORT || 8080;
+  let sandbox = sinon.sandbox.create();
 
   let bigfilesize;
   let bigfilehash;
@@ -61,6 +63,10 @@ describe('Controller', () => {
     } else {
       done();
     }
+  });
+
+  afterEach(() => {
+    sandbox.restore();
   });
 
   after(done => {
@@ -192,8 +198,6 @@ describe('Controller', () => {
   describe('API Special checks', () => {
     describe('Initiate Multipart Upload', () => {
       it('should not allow parts with size <= 0', () => {
-        
-
         return assertReject(controller.initiateMultipartUpload({
           bucket: 'bucket',
           key: 'key',
@@ -204,8 +208,6 @@ describe('Controller', () => {
       });
 
       it('should not allow parts with an empty string sha256', () => {
-        
-
         return assertReject(controller.initiateMultipartUpload({
           bucket: 'bucket',
           key: 'key',
@@ -216,8 +218,6 @@ describe('Controller', () => {
       });
 
       it('should not allow parts with invalid sha256', () => {
-        
-
         return assertReject(controller.initiateMultipartUpload({
           bucket: 'bucket',
           key: 'key',
@@ -226,12 +226,63 @@ describe('Controller', () => {
           size: 1,
         }));
       });
+
+      it('should throw for invalid storage classes', async () => {
+        // Just to make sure that no request goes out if the test fails
+        controller.runner = () => { throw new Error(); }
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          size: 1,
+          storageClass: 'INVALID',
+        }));
+      });
+
+      for (let storageClass of [undefined, 'STANDARD', 'STANDARD_IA', 'REDUCED_REDUNDANCY']) {
+        it('should use the correct storage class for ' + storageClass, async () => {
+          let runner = sandbox.mock();
+          runner.once();
+          controller.runner = runner;
+
+          runner.returns({
+            body: [
+              '<?xml version="1.0" encoding="UTF-8"?>',
+              '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+              '  <Bucket>bucket</Bucket>',
+              '  <Key>key</Key>',
+              '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+              '</InitiateMultipartUploadResult>',
+            ].join('\n'),
+            headers: {},
+            statusCode: 200,
+            statusMessage: 'OK',
+          });
+
+          let result = await controller.initiateMultipartUpload({
+            bucket: 'bucket',
+            key: 'key',
+            sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+            size: 1,
+            storageClass: storageClass,
+          });
+
+          runner.verify();
+
+          assume(runner.firstCall.args).is.array();
+          assume(runner.firstCall.args).has.lengthOf(1);
+          let arg = runner.firstCall.args[0];
+          assume(arg.req).has.property('method', 'POST');
+          assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+          assume(arg.req).has.property('headers');
+          assume(arg.req.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
+        });
+      }
     });
   });
 
   describe('Generate Multipart Request', () => {
     it ('should return the right values', async () => {
-      
       let parts = [
         {sha256: crypto.createHash('sha256').update('part1').digest('hex'), size: 5*1024*1024},
         {sha256: crypto.createHash('sha256').update('part2').digest('hex'), size: 5*1024*1024},
@@ -260,8 +311,6 @@ describe('Controller', () => {
     });
 
     it('should have correct number of parts', async () => {
-      
-
       let hash = crypto.createHash('sha256').update('hi').digest('hex');
       let parts = [];
 
@@ -293,8 +342,6 @@ describe('Controller', () => {
     });
 
     it('should not allow parts with size < 5MB', async () => {
-      
-
       await controller.generateMultipartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -316,8 +363,6 @@ describe('Controller', () => {
     });
 
     it('should not allow parts with size > 5GB', async () => {
-      
-
       controller.generateMultipartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -338,8 +383,6 @@ describe('Controller', () => {
     });
 
     it('should not allow parts with an empty string sha256', () => {
-      
-
       return assertReject(controller.generateMultipartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -351,8 +394,6 @@ describe('Controller', () => {
     });
 
     it('should not allow parts with invalid sha256', () => {
-      
-
       return assertReject(controller.generateMultipartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -365,9 +406,9 @@ describe('Controller', () => {
   });
 
   describe('Generate Single Part Request', () => {
+    let sha256 = crypto.createHash('sha256').update('single part').digest('hex');
+
     it ('should return the right values', async () => {
-      
-      let sha256 = crypto.createHash('sha256').update('part1').digest('hex');
       let size = 1024;
 
       let result = await controller.generateSinglepartRequest({
@@ -398,9 +439,35 @@ describe('Controller', () => {
       assume(result.headers).has.property('x-amz-tagging', 'tag1=value1&tag2=value2');
     });
 
-    it('should not allow size <= 0', () => {
-      
+    it('should throw for invalid storage classes', async () => {
+      // Just to make sure that no request goes out if the test fails
+      controller.runner = () => { throw new Error(); }
+      return assertReject(controller.generateSinglepartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        sha256: sha256,
+        size: 1,
+        storageClass: 'INVALID',
+      }));
+    });
 
+    for (let storageClass of [undefined, 'STANDARD', 'STANDARD_IA', 'REDUCED_REDUNDANCY']) {
+      it('should use the correct storage class for ' + storageClass, async () => {
+        let result = await controller.generateSinglepartRequest({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: sha256,
+          size: 1,
+          storageClass: storageClass,
+        });
+
+        assume(result).has.property('method', 'PUT');
+        assume(result).has.property('url', 'http://bucket.localhost:8080/key');
+        assume(result).has.property('headers');
+        assume(result.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
+      });
+    }
+    it('should not allow size <= 0', () => {
       return assertReject(controller.generateSinglepartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -409,9 +476,7 @@ describe('Controller', () => {
       }));
     });
 
-    it('should not allow parts with an empty string sha256', () => {
-      
-
+    it('should not allow an empty string sha256', () => {
       return assertReject(controller.generateSinglepartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -420,9 +485,7 @@ describe('Controller', () => {
       }));
     });
 
-    it('should not allow parts with invalid sha256', () => {
-      
-
+    it('should not allow invalid sha256', () => {
       return assertReject(controller.generateSinglepartRequest({
         bucket: 'bucket',
         key: 'key',
@@ -433,8 +496,6 @@ describe('Controller', () => {
   });
 
   describe('S3 Permissions', () => {
-    
-
     it('should handle a valid Canned ACL', () => {
       let actual = controller.__determinePermissionsHeaders({acl: 'private'});
       let expected = [['x-amz-acl', 'private']];
@@ -468,8 +529,6 @@ describe('Controller', () => {
         assume(tuple[0]).equals(tuple[1]);
       }
     });
-
-
   });
 });
 
