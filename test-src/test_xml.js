@@ -1,4 +1,5 @@
 let assume = require('assume');
+let libxml = require('libxmljs');
 let { Controller, run, parseS3Response } = require('../lib/controller');
 
 describe('XML Parsing', () => {
@@ -193,28 +194,93 @@ describe('XML Generation', () => {
     assume(actual).equals(expected);
   });
 
-  it('should generate valid content to tag object', () => {
-    let s3 = new Controller({region: 'us-east-1', runner: () => {}});
+  describe.only('Injection', () => {
+    // Since this is the only place in the system that we take untrusted input from a
+    // machine and stick it into XML, this is where we're testing for injection.  The only
+    // types of injection we 
+    it('should not allow XML tag injection in complete multipart upload body', () => {
+      let s3 = new Controller({region: 'us-east-1', runner: () => {}});
 
-    let expected = [
-      '<?xml version="1.0" encoding="UTF-8"?>', // not in docs, but should be
-      '<Tagging>',
-      '  <TagSet>',
-      '    <Tag>',
-      '      <Key>tag1</Key>',
-      '      <Value>val1</Value>',
-      '    </Tag>',
-      '    <Tag>',
-      '      <Key>tag2</Key>',
-      '      <Value>val2</Value>',
-      '    </Tag>',
-      '  </TagSet>',
-      '</Tagging>',
-    ].join('\n').trim();
+      let expected = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<CompleteMultipartUpload>',
+        '  <Part>',
+        '    <PartNumber>1</PartNumber>',
+        '    <ETag>&lt;hi&gt;John&lt;/hi&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>2</PartNumber>',
+        '    <ETag>&lt;hi&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>3</PartNumber>',
+        '    <ETag>&lt;/hi&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>4</PartNumber>',
+        '    <ETag>&lt;hi</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>5</PartNumber>',
+        '    <ETag>/hi&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>6</PartNumber>',
+        '    <ETag>&lt;![CDATA[&lt;script&gt;var n=0;while(true){n++;}&lt;/script&gt;]]&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>7</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;foo&gt;&lt;![CDATA[&lt;]]' +
+          '&gt;SCRIPT&lt;![CDATA[&gt;]]&gt;alert(\'gotcha\');&lt;![CDATA[&lt;]]&gt;/SCRIPT&lt;![CDATA[&gt;]]&gt;&lt;/foo&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>8</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;foo&gt;&lt;![CDATA[\' or 1=1 ' +
+          'or \'\'=\']]&gt;&lt;/foof&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>9</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;!DOCTYPE foo [&lt;!ELEMENT ' +
+          'foo ANY&gt;&lt;!ENTITY xxe SYSTEM "file://c:/boot.ini"&gt;]&gt;&lt;foo&gt;&amp;xee;&lt;/foo&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>10</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;!DOCTYPE foo [&lt;!ELEMENT ' +
+          'foo ANY&gt;&lt;!ENTITY xxe SYSTEM "file:///etc/passwd"&gt;]&gt;&lt;foo&gt;&amp;xee;&lt;/foo&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>11</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;!DOCTYPE foo [&lt;!ELEMENT ' +
+          'foo ANY&gt;&lt;!ENTITY xxe SYSTEM "file:///etc/shadow"&gt;]&gt;&lt;foo&gt;&amp;xee;&lt;/foo&gt;</ETag>',
+        '  </Part>',
+        '  <Part>',
+        '    <PartNumber>12</PartNumber>',
+        '    <ETag>&lt;?xml version="1.0" encoding="ISO-8859-1"?&gt;&lt;!DOCTYPE foo [&lt;!ELEMENT ' +
+          'foo ANY&gt;&lt;!ENTITY xxe SYSTEM "file:///dev/random"&gt;]&gt;&lt;foo&gt;&amp;xee;&lt;/foo&gt;</ETag>',
+        '  </Part>',
+        '</CompleteMultipartUpload>',
+      ].join('\n').trim();
 
-    let actual = s3.__generateTagSetBody({tag1: 'val1', tag2: 'val2'}).trim();
+      // https://www.owasp.org/index.php/OWASP_Testing_Guide_Appendix_C:_Fuzz_Vectors#XML_Injection
+      let actual = s3.__generateCompleteUploadBody([
+        '<hi>John</hi>',
+        '<hi>',
+        '</hi>',
+        '<hi',
+        '/hi>',
+        '<![CDATA[<script>var n=0;while(true){n++;}</script>]]>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><foo><![CDATA[<]]>SCRIPT<![CDATA[>]]>alert(\'gotcha\');<![CDATA[<]]>/SCRIPT<![CDATA[>]]></foo>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><foo><![CDATA[\' or 1=1 or \'\'=\']]></foof>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file://c:/boot.ini">]><foo>&xee;</foo>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xee;</foo>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///etc/shadow">]><foo>&xee;</foo>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///dev/random">]><foo>&xee;</foo>',
+      ]).trim();
 
-    assume(actual).equals(expected);
+      // Assume that the generated string is matching...
+      assume(actual).equals(expected);
+      // ... and also that it's semantically equivalent
+      assume(libxml.parseXml(actual).toString()).equals(libxml.parseXml(expected).toString());
+    });
   });
-
 });
