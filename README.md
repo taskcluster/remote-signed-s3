@@ -17,12 +17,13 @@ involved in uploading files to S3.  `Controller`s also know how to run methods
 which must be run from the server.  The methods which must be run from the
 server are the initate, complete and abort methods of the multipart uploads.
 
-There is a `Runner` class which is used by the `Controller` to run the requests
-which occur on the server.  This same `Runner` class is used to run requests on
-the untrusted host.  This is done to share code as well as ensure that the code
-which is published for consumers is working.
+The `Runner` class is used by both the `Client` and `Controller` to run the
+underlying HTTP requests.  Requests are passed between the `Contoller` and
+`Client` or between the `Controller` and `Runner` in something called
+interchange format.  This format is a generalized HTTP request description
+which omits the body.  The body must be provided to the HTTP request seperately
 
-The interchange format for the `Runner` class is like so:
+Here's an example of a simple request in this format:
 
 ```json
 {
@@ -34,11 +35,9 @@ The interchange format for the `Runner` class is like so:
 }
 ```
 
-Note that the request body itself is not specified anywhere in this format.
-
 TODO: Write some stuff:
 
-* `Controller.prototype.generateGet`: return a v4 signed url which allows
+* `Controller.prototype.generateGet`: return a v4 signed request which allows
   access to an object
 * `Client` support for downloading files
 * command line tool to run all the requests
