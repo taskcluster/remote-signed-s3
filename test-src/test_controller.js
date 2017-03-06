@@ -278,6 +278,70 @@ describe('Controller', () => {
           assume(arg.req.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
         });
       }
+
+      describe('Metadata', () => {
+        it('should work for a single object', () => {
+          let actual = controller.__generateMetadataHeaders({
+            a: 'string',
+            b: 123,
+          });
+
+          assume(actual).to.deeply.equal({'x-amz-meta-a': 'string', 'x-amz-meta-b': '123'});
+        });
+        
+        it('should work for multiple object', () => {
+          let actual = controller.__generateMetadataHeaders({a:1}, {b:2}, {c:3});
+          let expected = {
+            'x-amz-meta-a': '1',
+            'x-amz-meta-b': '2',
+            'x-amz-meta-c': '3',
+          };
+
+          assume(actual).to.deeply.equal(expected);
+        });
+
+        it('should throw when trying to define key twice', () => {
+          assume(() => {
+            controller.__generateMetadataHeaders({a:1}, {a:2});
+          }).throws('Attempting to define a in metadata twice');
+        });
+
+        it('should throw for a value that is too big', () => {
+          let bytes = 2048 - 'x-amz-meta-a'.length;
+          let max = Buffer.alloc(bytes, 'a').toString('utf8');
+          controller.__generateMetadataHeaders({a: max});
+
+          max = max + 'a';
+
+          assume(() => {
+            controller.__generateMetadataHeaders({a: max});
+          }).throws(/Metadata exceeds 2048 byte/);
+
+        });
+
+        it('should throw a boolean value', () => {
+          assume(() => {
+            controller.__generateMetadataHeaders({a: true});
+          }).throws(/Metadata values must be string/);
+        });
+        it('should throw an undefined value', () => {
+          assume(() => {
+            controller.__generateMetadataHeaders({a: undefined});
+          }).throws(/Metadata values must be string/);
+        });
+        it('should throw an object value', () => {
+          assume(() => {
+            controller.__generateMetadataHeaders({a: {b:1}});
+          }).throws(/Metadata values must be string/);
+        });
+        it('should throw a function value', () => {
+          assume(() => {
+            controller.__generateMetadataHeaders({a: () => {}});
+          }).throws(/Metadata values must be string/);
+        });
+
+
+      });
     });
   });
 
@@ -405,7 +469,7 @@ describe('Controller', () => {
     });
   });
 
-  describe.only('S3 Object Tag Validation', () => {
+  describe('S3 Object Tag Validation', () => {
     // We want to ensure that our valid key is 128 chars that are outside of
     // the ascii range.  This ensures that count is by unicode char and not by
     // byte
@@ -495,8 +559,8 @@ describe('Controller', () => {
       assume(result).has.property('headers');
       assume(result.headers).has.property('x-amz-content-sha256', sha256);
       assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
-      assume(result.headers).has.property('x-amz-meta-content-length', size);
-      assume(result.headers).has.property('content-length', size);
+      assume(result.headers).has.property('x-amz-meta-content-length', size + '');
+      assume(result.headers).has.property('content-length', size + '');
       assume(result.headers).has.property('Host', 'example-bucket.localhost:' + port);
       assume(result.headers).has.property('Authorization');
       assume(result.headers).has.property('X-Amz-Date');
@@ -532,6 +596,21 @@ describe('Controller', () => {
         assume(result.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
       });
     }
+
+    it.only('should set metadata headers correctly', async () => {
+      let result = await controller.generateSinglepartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        sha256: sha256,
+        size: 1,
+        metadata: {
+          string: 'string',
+          number: 123,
+        }
+      });
+      console.dir(result);
+    });
+
     it('should not allow size <= 0', () => {
       return assertReject(controller.generateSinglepartRequest({
         bucket: 'bucket',

@@ -53,6 +53,7 @@ const schemas = {
   uploadId: Joi.string(),
   etags: Joi.array().min(1).max(10000).items(Joi.string()),
   tags: Joi.object(),
+  metadata: Joi.object(),
   storageClass: Joi.string().valid(storageClasses).default('STANDARD'),
 };
 
