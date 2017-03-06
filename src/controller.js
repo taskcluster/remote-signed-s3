@@ -240,6 +240,66 @@ class Controller {
     return perms;
   }
 
+  // NOTE: If we can do this with Joi, I'd prefer that
+  // http://docs.aws.amazon.com/AmazonS3/latest/dev/object-tagging.html
+  __validateTags(tags) {
+    if (!tags) {
+      return;
+    }
+    if (Object.keys(tags).length > 10) {
+      throw new Error('S3 allows no more than 10 tags on an object');
+    }
+
+    for (let tag in tags) {
+      if (tag.toString('utf8').length > 128) {
+        throw new Error('S3 object tag keys must be 128 or fewer characters');
+      }
+      if (tags[tag].toString('utf8').length > 256) {
+        throw new Error('S3 object tag values must be 256 or fewer characters');
+      }
+    }
+
+  }
+
+  // NOTE: If we can do this with Joi, I'd prefer that
+  __generateMetadataHeaders(...objs) {
+    let metaPrefix = 'x-amz-meta-';
+    let totalSize = 0;
+    let headers = {}
+    for (let obj of objs) {
+      for (let key in obj) {
+        let value = obj[key];
+        if (typeof value === 'number') {
+          value = Number(value).toString(10);
+        } else if (typeof value !== 'string') {
+          throw new Error('Metadata values must be strings or numbers');
+        }
+        // VERIFY that the x-amz-meta- prefix is not included in the 2048 unicode
+        // character limit before removing it from the count.  I suspect that
+        // this limit is inclusive and that's the safer option
+        // NOTE: We're using Buffer length because we need to ensure we're
+        // measuring the number of bytes of the UTF8 encoded form, rather than
+        // the number of UTF8 chars
+        totalSize += Buffer.from(metaPrefix.toString('utf8')).length;
+        totalSize += Buffer.from(key.toString('utf8')).length;
+        totalSize += Buffer.from(value.toString('utf8')).length;
+        if (key.slice(0, metaPrefix.length) === metaPrefix) {
+          throw new Error('Metadata keys shoud not already have x-amz-meta prefix');
+        }
+        if (headers[metaPrefix + key]) {
+          throw new Error('Attempting to define ' + key + ' in metadata twice');
+        }
+        headers[metaPrefix + key] = value
+      }
+    }
+
+    if (totalSize > 2048) {
+      throw new Error('Metadata exceeds 2048 byte limit');
+    }
+
+    return headers;
+  }
+
   __s3hostname(bucket) {
     let hostname = `${bucket}.${this.s3host}`;
     if (this.s3port) {
@@ -262,9 +322,10 @@ class Controller {
       size: schemas.mpSize.required(),
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
-    }).optionalKeys('permissions'));
+      metadata: schemas.metadata,
+    }).optionalKeys('permissions', 'metadata'));
 
-    let {bucket, key, sha256, size, permissions, storageClass} = opts;
+    let {bucket, key, sha256, size, permissions, storageClass, metadata} = opts;
 
     if (size <= 0) {
       // Each part must have a non-zero size
@@ -274,11 +335,12 @@ class Controller {
       throw new Error('Object must total fewer than 5 TB'); 
     }
 
-    let headers = {
-        'x-amz-meta-content-sha256': sha256,
-        'x-amz-meta-content-length': size,
-        'x-amz-storage-class': storageClass,
-    };
+    let headers = this.__generateMetadataHeaders(metadata, {
+      'content-sha256': sha256,
+      'content-length': size,
+    });
+
+    headers['x-amz-storage-class'] = storageClass;
 
     // If we have permissions, set those values on the headers
     if (permissions) {
@@ -364,24 +426,6 @@ class Controller {
     }
 
     return requests;
-  }
-
-  // NOTE: If we can do this with Joi, I'd prefer that
-  // http://docs.aws.amazon.com/AmazonS3/latest/dev/object-tagging.html
-  __validateTags(tags) {
-    if (Object.keys(tags).length > 10) {
-      throw new Error('S3 allows no more than 10 tags on an object');
-    }
-
-    for (let tag in tags) {
-      if (tag.toString('utf8').length > 128) {
-        throw new Error('S3 object tag keys must be 128 or fewer characters');
-      }
-      if (tags[tag].toString('utf8').length > 256) {
-        throw new Error('S3 object tag values must be 256 or fewer characters');
-      }
-    }
-
   }
 
   /**
@@ -539,22 +583,21 @@ class Controller {
       tags: schemas.tags,
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
-    }).optionalKeys('tags', 'permissions'));
+      metadata: schemas.metadata,
+    }).optionalKeys('tags', 'permissions', 'metadata'));
 
-    let {bucket, key, sha256, size, tags, permissions, storageClass} = opts;
+    let {bucket, key, sha256, size, tags, permissions, storageClass, metadata} = opts;
 
     this.__validateTags(tags);
 
-    let headers = {
+    let headers = this.__generateMetadataHeaders(metadata, {
+      'content-sha256': sha256,
       'content-length': size,
-      'x-amz-content-sha256': sha256,
-      'x-amz-meta-content-sha256': sha256,
-      'x-amz-meta-content-length': size,
-    };
+    });
 
-    if (storageClass) {
-      headers['x-amz-storage-class'] = storageClass;
-    }
+    headers['x-amz-storage-class'] = storageClass;
+    headers['x-amz-content-sha256'] = sha256;
+    headers['content-length'] = Number(size).toString(10);
 
     if (tags) {
       headers['x-amz-tagging'] = qs.stringify(tags);
