@@ -162,6 +162,9 @@ async function createMockS3Server(opts) {
                 Connection: 'keep-alive',
                 Server: 'AmazonS3',
               }
+              if (request.headers['x-amz-storage-class']) {
+                headers['x-amx-storage-class'] = request.headers['x-amz-storage-class'];
+              }
               break;
             /////////////////////////////////////////////////////////////
             case 'uploadPart':

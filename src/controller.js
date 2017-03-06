@@ -155,6 +155,9 @@ class Controller {
    * the passed in ones.  This is a sanity check.
    */
   __getResponseProperty(doc, container, property, bucket, key) {
+    if (!doc) {
+      throw new Error('XML Document expected');
+    }
     if (doc.root().name() !== container) {
       throw new Error('Document does not have ' + container);
     }
@@ -258,9 +261,10 @@ class Controller {
       sha256: schemas.sha256.required(),
       size: schemas.mpSize.required(),
       permissions: schemas.permissions,
+      storageClass: schemas.storageClass,
     }).optionalKeys('permissions'));
 
-    let {bucket, key, sha256, size, permissions} = opts;
+    let {bucket, key, sha256, size, permissions, storageClass} = opts;
 
     if (size <= 0) {
       // Each part must have a non-zero size
@@ -269,33 +273,35 @@ class Controller {
       // The entire file must be lower than 5 TB
       throw new Error('Object must total fewer than 5 TB'); 
     }
-    let unsignedRequest = {
-      service: 's3',
-      region: this.region,
-      method: 'POST',
-      protocol: this.s3protocol,
-      hostname: this.__s3hostname(bucket),
-      path: `/${key}?uploads=`,
-      headers: {
+
+    let headers = {
         'x-amz-meta-content-sha256': sha256,
         'x-amz-meta-content-length': size,
-      }
+        'x-amz-storage-class': storageClass,
     };
 
     // If we have permissions, set those values on the headers
     if (permissions) {
       let permHeaders = this.__determinePermissionsHeaders(permissions);
       for (let tuple of permHeaders) {
-        unsignedRequest.headers[tuple[0]] = tuple[1];
+        headers[tuple[0]] = tuple[1];
       }
     }
 
-    let signedRequest = aws4.sign(unsignedRequest);
+    let signedRequest = aws4.sign({
+      service: 's3',
+      region: this.region,
+      method: 'POST',
+      protocol: this.s3protocol,
+      hostname: this.__s3hostname(bucket),
+      path: `/${key}?uploads=`,
+      headers: headers,
+    });
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest)
     });
-    
+
     let parsedResponse = parseS3Response(response.body);
 
     let uploadId = this.__getUploadId(parsedResponse, bucket, key);
@@ -351,7 +357,7 @@ class Controller {
         headers: {
           'x-amz-content-sha256': part.sha256,
           'content-length': part.size,
-        }
+        },
       });
 
       requests.push(this.__serializeRequest(signedRequest));
@@ -512,39 +518,42 @@ class Controller {
       size: schemas.spSize.required(),
       tags: schemas.tags,
       permissions: schemas.permissions,
+      storageClass: schemas.storageClass,
     }).optionalKeys('tags', 'permissions'));
 
-    let {bucket, key, sha256, size, tags, permissions} = opts;
+    let {bucket, key, sha256, size, tags, permissions, storageClass} = opts;
 
-    let unsignedRequest = {
+    let headers = {
+      'content-length': size,
+      'x-amz-content-sha256': sha256,
+      'x-amz-meta-content-sha256': sha256,
+      'x-amz-meta-content-length': size,
+    };
+
+    if (storageClass) {
+      headers['x-amz-storage-class'] = storageClass;
+    }
+
+    if (tags) {
+      headers['x-amz-tagging'] = qs.stringify(tags);
+    }
+
+    if (permissions) {
+      let permHeaders = this.__determinePermissionsHeaders(permissions);
+      for (let tuple of permHeaders) {
+        headers[tuple[0]] = tuple[1];
+      }
+    }
+
+    let signedRequest = aws4.sign({
       service: 's3',
       region: this.region,
       method: 'PUT',
       protocol: this.s3protocol,
       hostname: this.__s3hostname(bucket),
       path: `/${key}`,
-      headers: {
-        'content-length': size,
-        'x-amz-content-sha256': sha256,
-        'x-amz-meta-content-sha256': sha256,
-        'x-amz-meta-content-length': size,
-      }
-    };
-
-    // Set any tags.  For once, AWS Tags are atomic!
-    if (tags) {
-      unsignedRequest.headers['x-amz-tagging'] = qs.stringify(tags);
-    }
-
-    // If we have permissions, set those values on the headers
-    if (permissions) {
-      let permHeaders = this.__determinePermissionsHeaders(permissions);
-      for (let tuple of permHeaders) {
-        unsignedRequest.headers[tuple[0]] = tuple[1];
-      }
-    }
-
-    let signedRequest = aws4.sign(unsignedRequest);
+      headers: headers,
+    });
 
     return this.__serializeRequest(signedRequest);
   }
