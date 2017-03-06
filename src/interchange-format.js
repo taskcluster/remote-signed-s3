@@ -25,6 +25,12 @@ function validate(obj) {
   if (result.error) {
     throw new Error(result.error);
   }
+  for (let header in result.headers) {
+    let value = result.headers[header];
+    if (typeof value !== 'string') {
+      throw new Error('All header values must be strings!');
+    }
+  }
   return obj;
 }
 
