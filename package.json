@@ -25,6 +25,11 @@
     "pretest": "npm run compile",
     "test": "DEBUG= mocha $MOCHA_FLAGS"
   },
+  "files": [
+    "lib/",
+    "src/",
+    "README.md"
+  ],
   "keywords": [
     "taskcluster",
     "aws",
