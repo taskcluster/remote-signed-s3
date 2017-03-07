@@ -201,6 +201,7 @@ describe('XML Generation', () => {
     it('should not allow XML tag injection in complete multipart upload body', () => {
       let s3 = new Controller({region: 'us-east-1', runner: () => {}});
 
+      // This is a properly escaped document
       let expected = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<CompleteMultipartUpload>',
@@ -262,7 +263,7 @@ describe('XML Generation', () => {
       ].join('\n').trim();
 
       // https://www.owasp.org/index.php/OWASP_Testing_Guide_Appendix_C:_Fuzz_Vectors#XML_Injection
-      let actual = s3.__generateCompleteUploadBody([
+      let nodeContents = [
         '<hi>John</hi>',
         '<hi>',
         '</hi>',
@@ -275,12 +276,24 @@ describe('XML Generation', () => {
         '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xee;</foo>',
         '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///etc/shadow">]><foo>&xee;</foo>',
         '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///dev/random">]><foo>&xee;</foo>',
-      ]).trim();
+      ];
+
+      let actual = s3.__generateCompleteUploadBody(nodeContents).trim();
 
       // Assume that the generated string is matching...
       assume(actual).equals(expected);
       // ... and also that it's semantically equivalent
       assume(libxml.parseXml(actual).toString()).equals(libxml.parseXml(expected).toString());
+
+      // Now let's double check that the number of Part nodes is equal to the number we expected
+      let parsedActual = libxml.parseXml(actual);
+      let x = 0;
+      for (let child of parsedActual.root().childNodes()) {
+        if (child.name() === 'Part') {
+          x++;
+        }
+      }
+      assume(x).equals(nodeContents.length);
     });
   });
 });
