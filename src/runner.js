@@ -45,6 +45,8 @@ class Runner {
    * Run a request and retry if a retryable error occurs.  Only 500-series
    * responses are considered retriable, so any other status code will return
    * with its status.
+   *
+   * http://docs.aws.amazon.com/general/latest/gr/api-retries.html
    */
   async run(opts) {
     let {req, body, streamingOutput} = opts;
