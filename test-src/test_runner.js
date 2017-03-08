@@ -106,7 +106,7 @@ describe('Request Runner', () => {
     server.listen(port, 'localhost', done);
   });
 
-  describe.only('Retries', () => {
+  describe('Retries', () => {
     let sandbox;
 
     beforeEach(() => {
