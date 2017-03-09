@@ -106,6 +106,10 @@ describe('Request Runner', () => {
     server.listen(port, 'localhost', done);
   });
 
+  after(done => {
+    server.close(() => {done()});
+  });
+
   describe('Retries', () => {
     let sandbox;
 
@@ -367,3 +371,128 @@ describe('Request Runner', () => {
 
   });
 });
+
+describe('Redirects', () => {
+  let port = process.env.PORT || 8080;
+  let runner;
+  let server;
+  let current;
+
+  beforeEach(() => {
+    runner = new Runner();
+  });
+
+  afterEach(done => {
+    if (server) {
+      server.close(() => {done()});
+    } else {
+      done();
+    }
+  })
+
+  async function redirectServer(total, code, withLoc=true) {
+    let _server = http.createServer();
+    let current = 0;
+
+    _server.on('request', (request, response) => {
+      let headers = {
+        current,
+        total,
+        code,
+      };
+      if (Number.parseInt(request.url.slice(1)) !== current) {
+        throw new Error('incorrect current');
+      }
+      if (current < total) {
+        current++;
+        if (withLoc) {
+          headers.location = `http://localhost:${port}/${current}`;
+        }
+        response.writeHead(code, headers);
+        response.end('redirect');
+      } else {
+        response.writeHead(200, headers);
+        response.end('end');
+      }
+    });
+
+    return new Promise((resolve, reject) => {
+      _server.listen(port, 'localhost', () => { resolve(_server) })
+    });
+  }
+
+  // These are specified 300 series redirects which should not be followed
+  for (let code of [300, 304, 305, 307]) {
+    it('should follow a simple ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '0');
+    });
+  }
+
+  for (let code of [301, 302, 303]) {
+    it('should follow a simple ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', 200);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '2');
+    });
+  
+    it('should exhaust maxRetries for ' + code + ' redirect', async () => {
+      server = await redirectServer(100, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '5');
+    });  
+
+    it('should not redirect for POST on ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'POST',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '0');
+    });
+  }
+});
+
+
