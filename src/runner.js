@@ -33,11 +33,15 @@ class Runner {
       agent: Joi.object(),
       agentOpts: Joi.object(),
       maxRetries: Joi.number().min(0).max(10).default(5),
+      retryDelayFactor: Joi.number().min(100).default(100),
+      retryDelayJitter: Joi.number().min(0).default(0),
     }).without('agent', 'agentOpts').optionalKeys(['agent', 'agentOpts']));
 
     this.agent = opts.agent || new https.Agent(opts.agentOpts || {}); 
 
     this.maxRetries = opts.maxRetries;
+    this.retryDelayFactor = opts.retryDelayFactor;
+    this.retryDelayJitter = opts.retryDelayJitter;
 
   }
 
@@ -63,9 +67,11 @@ class Runner {
       followRedirect = false;
     }
 
-    function sleepFor(n) {
+    let sleepFor = (n) => {
       return new Promise((resolve, reject) => {
-        let delay = Math.pow(2, n) * 100;
+        let delay = Math.pow(2, n) * this.retryDelayFactor;
+        let rf = this.retryDelayJitter;
+        delay = delay * (Math.random() * 2 * rf + 1 - rf);
         setTimeout(resolve, delay);
       });
     }
