@@ -372,7 +372,9 @@ describe('Request Runner', () => {
   });
 });
 
-describe('Redirects', () => {
+// We are not yet sure whether redirect will live in this library or not, but
+// if it does, this is the unit test suite that should pass for them
+describe.skip('Redirects', () => {
   let port = process.env.PORT || 8080;
   let runner;
   let server;

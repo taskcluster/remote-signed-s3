@@ -53,18 +53,16 @@ class Runner {
    * http://docs.aws.amazon.com/general/latest/gr/api-retries.html
    */
   async run(opts) {
-    let {req, body, streamingOutput, followRedirect, currentRedirect, maxRedirects} = opts;
+    let {req, body, streamingOutput} = opts;
     let current = 0;
 
-    currentRedirect = currentRedirect || 0;
-    maxRedirects = maxRedirects || 10;
-
-    // Since streams aren't seekable in node, we want to ensure that
-    // whenever 
+    // Certain types of request bodies are not replayable.  For these types of
+    // bodies, we want to support making a single request but we will notify
+    // the user and we will disable the ability to do any form of automatic
+    // retries
     if (body && body instanceof stream.Readable || body && typeof body.pipe === 'function') {
-      debug('WARNING: instances of stream.Readable are not retryable or redirectable');
+      debug('WARNING: instances of stream.Readable are not retryable');
       current = this.maxRetries - 1;
-      followRedirect = false;
     }
 
     let sleepFor = (n) => {
@@ -85,42 +83,6 @@ class Runner {
         debug(`RETRYABLE ERROR ${req.method} ${req.url} --> ${errorSummary}`);
         await sleepFor(current);
         continue;
-      } else if (followRedirect) {
-        // https://www.ietf.org/rfc/rfc2616.txt -- 10.3 Redirection 3xx
-        // These are the only 300 series codes that we're sure we can safely
-        // redirect.  Basically, anything which is not a known to be safe
-        // redirect will be returned as the 300 series response rather than
-        // following them.  If a safe to redirect 300 is missing a location
-        // header, then it will be returned as the 300 result as well
-        switch (result.statusCode) {
-          case 301:
-          case 302:
-          case 303:
-            if (req.method === 'GET' || req.method === 'HEAD') {
-              let location = result.headers.location;
-              if (location && currentRedirect < maxRedirects) {
-                return await(this.run({
-                  req: {
-                    url: location,
-                    method: req.method,
-                    headers: req.headers,
-                  },
-                  body,
-                  streamingOutput,
-                  followRedirect,
-                  maxRedirects,
-                  currentRedirect: currentRedirect + 1,
-                }));
-              } else {
-                debug(`WARNING: will only follow ${result.statusCode} with Location header`);
-              }
-            } else {
-              debug(`WARNING: will only follow ${result.statusCode} for GET or HEAD`);
-            }
-            break;
-          default:
-            debug('WARNING: will only follow a 301, 302 or 303 redirect');
-        }
       }
       return result;
     }
