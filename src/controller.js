@@ -2,6 +2,7 @@ import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
 import qs from 'querystring';
+import urllib from 'url';
 
 import _debug from 'debug';
 import aws4 from 'aws4';
@@ -350,6 +351,43 @@ class Controller {
     }
 
     return request;
+  }
+
+  /**
+   * Generate an optionally signed GET URL for an object
+   */
+  async generateGetUrl(opts) {
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      signed: Joi.boolean().default(false),
+    }));
+    
+    let {bucket, key, signed} = opts;
+
+    let request = this.__generateRequestBase({bucket, key, method: 'GET'});
+    let pathname = request.path;
+    let search;
+
+    if (signed) {
+      request.signQuery = true;
+      request = aws4.sign(request);
+
+      let pathParts = request.path.split('?');
+      if (pathParts.length !== 2) {
+        throw new Error('Too many question marks in a path');
+      }
+
+      pathname = pathParts[0];
+      search = pathParts[1];
+    }
+
+    return urllib.format({
+      protocol: request.protocol,
+      host: request.hostname,
+      pathname: pathname,
+      search: search,
+    });
   }
  
   /**

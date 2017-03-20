@@ -4,6 +4,7 @@ const http = require('http');
 const urllib = require('url');
 const fs = require('fs');
 const sinon = require('sinon');
+const qs = require('querystring');
 
 const assume = require('assume');
 const { Controller, parseS3Response } = require('../');
@@ -781,6 +782,36 @@ describe('Controller', () => {
       }).throws(/^S3 object tag values/);
     });
   });
+
+  describe('Generate Get Request', () => {
+    it ('should return the right values for unsigned', async () => {
+      let result = await controller.generateGetUrl({
+        bucket: 'example-bucket',
+        key: 'example-key',
+      });
+      assume(result).equals('http://example-bucket.localhost:8080/example-key');
+    });
+
+    it ('should return the right values for signed', async () => {
+      let result = await controller.generateGetUrl({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        signed: true,
+      });
+
+      result = urllib.parse(result);
+      assume(result).has.property('protocol', 'http:');
+      assume(result).has.property('host', 'example-bucket.localhost:8080');
+      assume(result).has.property('pathname', '/example-key');
+      result = qs.parse(result.query);
+      for (let k of ['Expires', 'Date', 'Algorithm', 'Credential', 'SignedHeaders', 'Signature']) {
+        assume(result).has.property('X-Amz-' + k);
+      }
+    });
+
+  });
+
+
 
   describe('Generate Single Part Request', () => {
     let sha256 = crypto.createHash('sha256').update('single part').digest('hex');
