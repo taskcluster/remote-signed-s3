@@ -23,7 +23,7 @@
     "compile": "babel-compile -p taskcluster src:lib test-src:test",
     "prepublish": "npm run compile",
     "pretest": "npm run compile",
-    "test": "DEBUG= mocha $MOCHA_FLAGS"
+    "test": "mocha $MOCHA_FLAGS"
   },
   "files": [
     "lib/",

@@ -10,14 +10,17 @@ const Runner = require('../lib/runner');
 
 const assertReject = require('./utils').assertReject;
 
-const runner = new Runner();
-
 const testServerBase = 'http://localhost:8080/';
 
 describe('Request Runner', () => {
+  let runner;
   
   let server;
   let port = process.env.PORT || 8080;
+
+  beforeEach(() => {
+    runner = new Runner();
+  });
 
   before(done => {
     server = http.createServer();
@@ -103,12 +106,74 @@ describe('Request Runner', () => {
     server.listen(port, 'localhost', done);
   });
 
+  after(done => {
+    server.close(() => {done()});
+  });
+
+  describe('Retries', () => {
+    let sandbox;
+
+    beforeEach(() => {
+      sandbox = sinon.sandbox.create();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should retry up to 5 times by default', async () => {
+      let runFiveTimes = sandbox.spy(runner, 'runOnce');
+
+      let result = await runner.run({
+        req: {
+          url: testServerBase + 'status/500',
+          method: 'GET',
+          headers: {},
+        },
+      });
+
+      console.dir(result);
+      assume(runFiveTimes).has.property('callCount', 5);
+    });
+    
+    it('should only run runOnce once', async () => {
+      let runOneTime = sandbox.spy(runner, 'runOnce');
+
+      let result = await runner.run({
+        req: {
+          url: testServerBase + 'status/200',
+          method: 'GET',
+          headers: {},
+        },
+      });
+
+      console.dir(result);
+      assume(runOneTime).has.property('callCount', 1);
+    });    
+
+    it('a raw stream for the body should only allow a single try', async () => {
+      let runOneTime = sandbox.spy(runner, 'runOnce');
+
+      let result = await runner.run({
+        req: {
+          url: testServerBase + 'status/500',
+          method: 'PUT',
+          headers: {},
+        },
+        body: fs.createReadStream(__dirname + '/../package.json'),
+      });
+
+      console.dir(result);
+      assume(runOneTime).has.property('callCount', 1);
+    });
+  });
+
   // If you want to play with this development server, uncomment this
   // line:
   // it.only('test server', done => { });
 
   it('should be able to make a basic call', async () => {
-    let result = await runner.run({
+    let result = await runner.runOnce({
       req: {
         url: testServerBase + 'simple',
         method: 'GET',
@@ -118,7 +183,7 @@ describe('Request Runner', () => {
   });
   
   it('should work with a lower case method', async () => {
-    let result = await runner.run({
+    let result = await runner.runOnce({
       req: {
         url: testServerBase + 'method/get',
         method: 'get',
@@ -131,7 +196,7 @@ describe('Request Runner', () => {
   });
 
   it('should send headers correctly', async () => {
-    let result = await runner.run({
+    let result = await runner.runOnce({
       req: {
         url: testServerBase + 'header-repeat',
         method: 'get',
@@ -147,7 +212,7 @@ describe('Request Runner', () => {
   });
 
   it('should throw when a body should not be given', () => {
-    return assertReject(runner.run({
+    return assertReject(runner.runOnce({
       url: testServerBase + 'method/get',
       method: 'get',
       headers: {
@@ -158,7 +223,7 @@ describe('Request Runner', () => {
 
   for (let status of [200, 299, 300, 400, 500]) {
     it(`should return a ${status} HTTP Status Code correctly`, async () => {
-      let result = await runner.run({
+      let result = await runner.runOnce({
         req: {
           url: testServerBase + 'status/' + status,
           method: 'get',
@@ -173,7 +238,7 @@ describe('Request Runner', () => {
 
   for (let method of ['post', 'put']) {
     it(`should be able to ${method} data from a string body`, async () => {
-      let result = await runner.run({
+      let result = await runner.runOnce({
         req: {
           url: testServerBase + 'echo-data/' + method,
           method: method,
@@ -188,7 +253,7 @@ describe('Request Runner', () => {
     });
 
     it(`should be able to ${method} data from a Buffer body`, async () => {
-      let result = await runner.run({
+      let result = await runner.runOnce({
         req: {
           url: testServerBase + 'echo-data/' + method,
           method: method,
@@ -203,7 +268,7 @@ describe('Request Runner', () => {
     });
     
     it(`should be able to ${method} data from a streaming body passed in`, async () => {
-      let result = await runner.run({
+      let result = await runner.runOnce({
         req: {
           url: testServerBase + 'echo-data/' + method,
           method: method,
@@ -223,7 +288,7 @@ describe('Request Runner', () => {
         return fs.createReadStream(__dirname + '/../package.json');
       };
 
-      let result = await runner.run({
+      let result = await runner.runOnce({
         req: {
           url: testServerBase + 'echo-data/' + method,
           method: method,
@@ -240,7 +305,7 @@ describe('Request Runner', () => {
   }
 
   it('should be able to stream a response body (checking output)', async () => {
-    let result = await runner.run({
+    let result = await runner.runOnce({
       req: {
         url: testServerBase + 'file',
         method: 'get',
@@ -284,7 +349,7 @@ describe('Request Runner', () => {
   //      at TCP.onread (net.js:548:20)
   // 
   it.skip('should be able to stream a huge response body (ignoring output)', async () => {
-    let result = await runner.run({
+    let result = await runner.runOnce({
       req: {
         url: testServerBase + 'big-file',
         method: 'get',
@@ -306,3 +371,130 @@ describe('Request Runner', () => {
 
   });
 });
+
+// We are not yet sure whether redirect will live in this library or not, but
+// if it does, this is the unit test suite that should pass for them
+describe.skip('Redirects', () => {
+  let port = process.env.PORT || 8080;
+  let runner;
+  let server;
+  let current;
+
+  beforeEach(() => {
+    runner = new Runner();
+  });
+
+  afterEach(done => {
+    if (server) {
+      server.close(() => {done()});
+    } else {
+      done();
+    }
+  })
+
+  async function redirectServer(total, code, withLoc=true) {
+    let _server = http.createServer();
+    let current = 0;
+
+    _server.on('request', (request, response) => {
+      let headers = {
+        current,
+        total,
+        code,
+      };
+      if (Number.parseInt(request.url.slice(1)) !== current) {
+        throw new Error('incorrect current');
+      }
+      if (current < total) {
+        current++;
+        if (withLoc) {
+          headers.location = `http://localhost:${port}/${current}`;
+        }
+        response.writeHead(code, headers);
+        response.end('redirect');
+      } else {
+        response.writeHead(200, headers);
+        response.end('end');
+      }
+    });
+
+    return new Promise((resolve, reject) => {
+      _server.listen(port, 'localhost', () => { resolve(_server) })
+    });
+  }
+
+  // These are specified 300 series redirects which should not be followed
+  for (let code of [300, 304, 305, 307]) {
+    it('should follow a simple ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '0');
+    });
+  }
+
+  for (let code of [301, 302, 303]) {
+    it('should follow a simple ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', 200);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '2');
+    });
+  
+    it('should exhaust maxRetries for ' + code + ' redirect', async () => {
+      server = await redirectServer(100, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'GET',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '5');
+    });  
+
+    it('should not redirect for POST on ' + code + ' redirect', async () => {
+      server = await redirectServer(2, code);
+      let result = await runner.run({
+        followRedirect: true,
+        maxRedirects: 5,
+        req: {
+          url: `http://localhost:${port}/0`,
+          method: 'POST',
+          headers: {},
+        },
+        body: '',
+      });
+      assume(result).has.property('statusCode', code);
+      assume(result).has.property('headers');
+      assume(result.headers).has.property('current', '0');
+    });
+  }
+});
+
+

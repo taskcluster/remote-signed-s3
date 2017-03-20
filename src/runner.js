@@ -5,7 +5,7 @@ import urllib from 'url';
 import stream from 'stream';
 
 import _debug from 'debug';
-import Joi from 'joi';
+import {Joi, schemas, runSchema} from './schemas';
 
 import DigestStream from './digest-stream';
 import InterchangeFormat from './interchange-format';
@@ -28,12 +28,64 @@ const debugResponse = _debug('remote-s3:Runner:res');
  * actually transmitted matched a pre-computed size and hash
  */
 class Runner {
-  constructor(agent, agentOpts) {
-    this.agent = agent || new https.Agent(agentOpts || {}); 
+  constructor(opts) {
+    opts = runSchema(opts || {}, Joi.object().keys({
+      agent: Joi.object(),
+      agentOpts: Joi.object(),
+      maxRetries: Joi.number().min(0).max(10).default(5),
+      retryDelayFactor: Joi.number().min(100).default(100),
+      retryDelayJitter: Joi.number().min(0).default(0),
+    }).without('agent', 'agentOpts').optionalKeys(['agent', 'agentOpts']));
+
+    this.agent = opts.agent || new https.Agent(opts.agentOpts || {}); 
+
+    this.maxRetries = opts.maxRetries;
+    this.retryDelayFactor = opts.retryDelayFactor;
+    this.retryDelayJitter = opts.retryDelayJitter;
+
   }
 
+  /**
+   * Run a request and retry if a retryable error occurs.  Only 500-series
+   * responses are considered retriable, so any other status code will return
+   * with its status.
+   *
+   * http://docs.aws.amazon.com/general/latest/gr/api-retries.html
+   */
   async run(opts) {
-    return this.runOnce(opts);
+    let {req, body, streamingOutput} = opts;
+    let current = 0;
+
+    // Certain types of request bodies are not replayable.  For these types of
+    // bodies, we want to support making a single request but we will notify
+    // the user and we will disable the ability to do any form of automatic
+    // retries
+    if (body && body instanceof stream.Readable || body && typeof body.pipe === 'function') {
+      debug('WARNING: instances of stream.Readable are not retryable');
+      current = this.maxRetries - 1;
+    }
+
+    let sleepFor = (n) => {
+      return new Promise((resolve, reject) => {
+        let delay = Math.pow(2, n) * this.retryDelayFactor;
+        let rf = this.retryDelayJitter;
+        delay = delay * (Math.random() * 2 * rf + 1 - rf);
+        setTimeout(resolve, delay);
+      });
+    }
+
+    // Note that we've declared current earlier so that we could ensure that
+    // raw streams do not allow for retry
+    for ( ; current < this.maxRetries; current++) {
+      let result = await this.runOnce(opts);
+      if (result.statusCode >= 500 && current !== this.maxRetries - 1) {
+        let errorSummary = `${result.statusCode || '???'}: ${result.statusMessage || '???'}`;
+        debug(`RETRYABLE ERROR ${req.method} ${req.url} --> ${errorSummary}`);
+        await sleepFor(current);
+        continue;
+      }
+      return result;
+    }
   }
 
   /**

@@ -3,4 +3,3 @@
 --reporter spec
 --require source-map-support/register
 --require ./test/mochahooks
---require ../runcompile
