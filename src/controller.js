@@ -60,7 +60,7 @@ class Controller {
     this.s3host = `${s3region}.amazonaws.com`;
 
     // These values are used for unit testing to direct the 
-    this.s3protocol = undefined;
+    this.s3protocol = 'https:';
     this.s3port = undefined;
   }
 
@@ -258,7 +258,12 @@ class Controller {
       if (tag.toString('utf8').length > 128) {
         throw new Error('S3 object tag keys must be 128 or fewer characters');
       }
-      if (tags[tag].toString('utf8').length > 256) {
+      let tagValue = tags[tag];
+      // Let's convert numbers into decimal number strings
+      if (typeof tagValue === 'number') {
+        tagValue = tagValue.toString(10);
+      }
+      if (tagValue.toString('utf8').length > 256) {
         throw new Error('S3 object tag values must be 256 or fewer characters');
       }
     }
@@ -309,7 +314,7 @@ class Controller {
   __generateRequestBase(opts) {
     opts = runSchema(opts, Joi.object().keys({
       bucket: schemas.bucket.required(),
-      key: schemas.bucket.required(),
+      key: schemas.key.required(),
       method: Joi.string().required(),
       query: Joi.string(),
       headers: Joi.object().default({}),
