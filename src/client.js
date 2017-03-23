@@ -244,6 +244,7 @@ class Client {
         err.method = req.method;
         err.headers = req.headers;
         err.response = result.response;
+        throw err;
       }
       let etag;
       if (result && result.headers && result.headers.etag) {
