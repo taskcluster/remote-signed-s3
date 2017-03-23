@@ -40,10 +40,18 @@ class Controller {
       runner: Joi.any(),
       runnerOpts: Joi.object(),
       vhostAddressing: Joi.boolean().default(true),
+      accessKeyId: Joi.string().default(process.env.AWS_ACCESS_KEY_ID || ''),
+      secretAccessKey: Joi.string().default(process.env.AWS_SECRET_ACCESS_KEY || ''),
     }).without('runner', 'runnerOpts').optionalKeys(['runner', 'runnerOpts']));
 
     this.region = opts.region;
     let runner = opts.runner;
+
+    // Store the credentials
+    this.credentials = {
+      accessKeyId: opts.accessKeyId,
+      secretAccessKey: opts.secretAccessKey,
+    }
 
     // we don't want to get too specific into the internal API of the run() method,
     // so we're only saving the .run() method of the runner class that we're creating here. 
@@ -376,7 +384,7 @@ class Controller {
 
     if (signed) {
       request.signQuery = true;
-      request = aws4.sign(request);
+      request = aws4.sign(request, this.credentials);
 
       let pathParts = request.path.split('?');
       if (pathParts.length !== 2) {
@@ -467,7 +475,7 @@ class Controller {
       method: 'POST',
       query: 'uploads=',
       headers: headers,
-    }));
+    }), this.credentials);
     
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest)
@@ -527,7 +535,7 @@ class Controller {
           'x-amz-content-sha256': part.sha256,
           'content-length': part.size,
         },
-      }));
+      }), this.credentials);
 
       requests.push(this.__serializeRequest(signedRequest));
     }
@@ -567,7 +575,7 @@ class Controller {
 
     unsignedRequest.body = requestBody;
     
-    let signedRequest = aws4.sign(unsignedRequest);
+    let signedRequest = aws4.sign(unsignedRequest, this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -615,7 +623,7 @@ class Controller {
         'X-Amz-Content-Sha256': requestBodySha256.digest('hex'),
         'Content-Length': requestBody.length,
       },
-    }));
+    }), this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -656,7 +664,7 @@ class Controller {
         'x-amx-content-sha256': emptysha256,
       },
       query: 'uploadId=',
-    }));
+    }), this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -745,7 +753,7 @@ class Controller {
       key,
       method: 'PUT',
       headers: headers,
-    }));
+    }), this.credentials);
 
     return this.__serializeRequest(signedRequest);
   }
