@@ -639,7 +639,7 @@ class Controller {
     }
 
     if (tags) {
-      await this.__tagObject(opts);
+      await this.__tagObject({bucket, key, tags});
     }
 
     return multipartEtag;
@@ -663,7 +663,7 @@ class Controller {
         'content-length': 0,
         'x-amx-content-sha256': emptysha256,
       },
-      query: 'uploadId=',
+      query: `uploadId=${uploadId}`,
     }), this.credentials);
 
     let response = await this.runner({
