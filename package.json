@@ -1,6 +1,6 @@
 {
   "name": "remotely-signed-s3",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Do remote signing for S3 using V4 signatures",
   "main": "lib/index.js",
   "dependencies": {

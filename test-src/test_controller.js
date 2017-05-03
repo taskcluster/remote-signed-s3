@@ -373,6 +373,20 @@ describe('Controller', () => {
         }));
       });
 
+
+      it('should not allow differing transferSize from size for identity encoding', () => {
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          uploadId: 'uploadId',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee',
+          contentEncoding: 'identity',
+          size: 0,
+          transferSize: 1,
+        }));
+      });
+
       it('should not allow differing transferSha256 from sha256 for no encoding specified', () => {
         return assertReject(controller.initiateMultipartUpload({
           bucket: 'bucket',
@@ -390,6 +404,18 @@ describe('Controller', () => {
           key: 'key',
           uploadId: 'uploadId',
           sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          contentEncoding: 'gzip',
+          size: 0,
+        }));
+      });
+      
+      it('should not allow non-identity content coding without transferSize', () => {
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          uploadId: 'uploadId',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          transferSha256: '405056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
           contentEncoding: 'gzip',
           size: 0,
         }));
@@ -546,6 +572,7 @@ describe('Controller', () => {
           // NOTE This is a slightly different sha256
           transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee',
           size: 1,
+          transferSize: 1,
         });
 
         runner.verify();
@@ -589,6 +616,7 @@ describe('Controller', () => {
           contentEncoding: 'identity',
           transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
           size: 1,
+          transferSize: 1,
         });
 
         runner.verify();
@@ -1015,10 +1043,13 @@ describe('Controller', () => {
         sha256: sha256,
         transferSha256: transferSha256,
         size: 1024,
+        transferSize: 1022,
         contentEncoding: 'gzip',
       });
       assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
       assume(result.headers).has.property('x-amz-meta-transfer-sha256', transferSha256);
+      assume(result.headers).has.property('x-amz-meta-content-length', '1024');
+      assume(result.headers).has.property('x-amz-meta-transfer-length', '1022');
     });
 
     it('should support identity content-encoding', async () => {
@@ -1031,6 +1062,8 @@ describe('Controller', () => {
       });
       assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
       assume(result.headers).has.property('x-amz-meta-transfer-sha256', sha256);
+      assume(result.headers).has.property('x-amz-meta-content-length', '1024');
+      assume(result.headers).has.property('x-amz-meta-transfer-length', '1024');
       assume(result.headers).has.property('content-encoding', 'identity');
     });
 
