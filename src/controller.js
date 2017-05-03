@@ -750,12 +750,13 @@ class Controller {
         throw new Error('When not using content-encoding, optional parameter transferSha256 must match sha256');
       }
       headers['transfer-sha256'] = sha256;
+      transferSha256 = sha256;
     }
 
     headers = this.__generateMetadataHeaders(metadata, headers);
 
     headers['x-amz-storage-class'] = storageClass;
-    headers['x-amz-content-sha256'] = sha256;
+    headers['x-amz-content-sha256'] = transferSha256;
     headers['content-length'] = Number(size).toString(10);
 
     if (contentType) {
