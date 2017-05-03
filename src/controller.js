@@ -414,6 +414,7 @@ class Controller {
       bucket: schemas.bucket.required(),
       key: schemas.key.required(),
       sha256: schemas.sha256.required(),
+      transferSha256: schemas.sha256.required(),
       size: schemas.mpSize.required(),
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
@@ -421,12 +422,13 @@ class Controller {
       contentType: schemas.contentType,
       contentDisposition: schemas.contentDisposition,
       contentEncoding: schemas.contentEncoding,
-    }).optionalKeys('permissions', 'metadata'));
+    }).optionalKeys('permissions', 'metadata', 'transferSha256'));
 
     let {
       bucket,
       key,
       sha256,
+      transferSha256,
       size,
       permissions,
       storageClass,
@@ -444,22 +446,35 @@ class Controller {
       throw new Error('Object must total fewer than 5 TB'); 
     }
 
-    let headers = this.__generateMetadataHeaders(metadata, {
+    let headers = {
       'content-sha256': sha256,
       'content-length': size,
-    });
+    };
+
+    // Figure out content-encoding and sha256 values
+    if (contentEncoding && contentEncoding !== 'identity') {
+      if (!transferSha256) {
+        throw new Error('When using Content-Encoding, a transferSha256 value must be given');
+      }
+      headers['transfer-sha256'] = transferSha256;
+    } else {
+      if (transferSha256 && transferSha256 !== sha256) {
+        throw new Error('When not using content-encoding, optional parameter transferSha256 must match sha256');
+      }
+      headers['transfer-sha256'] = sha256;
+    }
+
+    headers = this.__generateMetadataHeaders(metadata, headers);
 
     headers['x-amz-storage-class'] = storageClass;
 
     if (contentType) {
       headers['content-type'] = contentType;
     }
-    if (contentEncoding) {
-      headers['content-encoding'] = contentEncoding;
-    }
     if (contentDisposition) {
       headers['content-disposition'] = contentDisposition;
     }
+    headers['content-encoding'] = contentEncoding || 'identity';
 
     // If we have permissions, set those values on the headers
     if (permissions) {

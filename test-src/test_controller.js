@@ -360,6 +360,41 @@ describe('Controller', () => {
 
   describe('API Special checks', () => {
     describe('Initiate Multipart Upload', () => {
+
+      it('should not allow differing transferSha256 from sha256 for identity encoding', () => {
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          uploadId: 'uploadId',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee',
+          contentEncoding: 'identity',
+          size: 0,
+        }));
+      });
+
+      it('should not allow differing transferSha256 from sha256 for no encoding specified', () => {
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          uploadId: 'uploadId',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee',
+          size: 0,
+        }));
+      });
+
+      it('should not allow non-identity content coding without transferSha256', () => {
+        return assertReject(controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          uploadId: 'uploadId',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          contentEncoding: 'gzip',
+          size: 0,
+        }));
+      });
+
       it('should not allow parts with size <= 0', () => {
         return assertReject(controller.initiateMultipartUpload({
           bucket: 'bucket',
@@ -483,7 +518,134 @@ describe('Controller', () => {
         assume(arg.req.headers).has.property('x-amz-meta-string', 'string');
         assume(arg.req.headers).has.property('x-amz-meta-number', '123');
       });
+      
+      it('should set content-encoding headers correctly with gzip encoding', async () => {
+        let runner = sandbox.mock();
+        runner.once();
+        controller.runner = runner;
 
+        runner.returns({
+          body: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+            '  <Bucket>bucket</Bucket>',
+            '  <Key>key</Key>',
+            '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+            '</InitiateMultipartUploadResult>',
+          ].join('\n'),
+          headers: {},
+          statusCode: 200,
+          statusMessage: 'OK',
+        });
+
+        let result = await controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          contentEncoding: 'gzip',
+          // NOTE This is a slightly different sha256
+          transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee',
+          size: 1,
+        });
+
+        runner.verify();
+
+        assume(runner.firstCall.args).is.array();
+        assume(runner.firstCall.args).has.lengthOf(1);
+        let arg = runner.firstCall.args[0];
+        assume(arg.req).has.property('method', 'POST');
+        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('headers');
+        assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
+        assume(arg.req.headers).has.property('x-amz-meta-transfer-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeee');
+        assume(arg.req.headers).has.property('content-encoding', 'gzip');
+      });
+      
+      it('should set content-encoding headers correctly with identity encoding', async () => {
+        let runner = sandbox.mock();
+        runner.once();
+        controller.runner = runner;
+
+        runner.returns({
+          body: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+            '  <Bucket>bucket</Bucket>',
+            '  <Key>key</Key>',
+            '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+            '</InitiateMultipartUploadResult>',
+          ].join('\n'),
+          headers: {},
+          statusCode: 200,
+          statusMessage: 'OK',
+        });
+
+        let result = await controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          contentEncoding: 'identity',
+          transferSha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          size: 1,
+        });
+
+        runner.verify();
+
+        assume(runner.firstCall.args).is.array();
+        assume(runner.firstCall.args).has.lengthOf(1);
+        let arg = runner.firstCall.args[0];
+        assume(arg.req).has.property('method', 'POST');
+        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('headers');
+        assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
+        assume(arg.req.headers).has.property('x-amz-meta-transfer-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
+        assume(arg.req.headers).has.property('content-encoding', 'identity');
+      });
+      
+      it('should set content-encoding headers correctly with no content encoding specified', async () => {
+        let runner = sandbox.mock();
+        runner.once();
+        controller.runner = runner;
+
+        runner.returns({
+          body: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+            '  <Bucket>bucket</Bucket>',
+            '  <Key>key</Key>',
+            '  <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>',
+            '</InitiateMultipartUploadResult>',
+          ].join('\n'),
+          headers: {},
+          statusCode: 200,
+          statusMessage: 'OK',
+        });
+
+        let result = await controller.initiateMultipartUpload({
+          bucket: 'bucket',
+          key: 'key',
+          sha256: '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef',
+          size: 1,
+        });
+
+        runner.verify();
+
+        assume(runner.firstCall.args).is.array();
+        assume(runner.firstCall.args).has.lengthOf(1);
+        let arg = runner.firstCall.args[0];
+        assume(arg.req).has.property('method', 'POST');
+        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('headers');
+        assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
+        assume(arg.req.headers).has.property('x-amz-meta-transfer-sha256',
+          '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
+        assume(arg.req.headers).has.property('content-encoding', 'identity');
+      });
 
       it('should set the other content headers correctly', async () => {
         let runner = sandbox.mock();
@@ -511,7 +673,6 @@ describe('Controller', () => {
           size: 1,
           contentType: 'content-type',
           contentDisposition: 'content-disposition',
-          contentEncoding: 'content-encoding',
         });
 
         runner.verify();
@@ -524,7 +685,6 @@ describe('Controller', () => {
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('content-type', 'content-type');
         assume(arg.req.headers).has.property('content-disposition', 'content-disposition');
-        assume(arg.req.headers).has.property('content-encoding', 'content-encoding');
       });
 
     });
