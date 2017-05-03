@@ -1,10 +1,13 @@
 import assert from 'assert';
 import crypto from 'crypto';
+import zlib from 'zlib';
+import stream from 'stream';
 
 import fs from 'mz/fs';
 
 import Runner from './runner';
 import InterchangeFormat from './interchange-format';
+import DigestStream from './digest-stream';
 import {Joi, schemas, runSchema, MB, GB, TB} from './schemas';
 
 const MAX_S3_CHUNKS = 10000;
@@ -195,6 +198,58 @@ class Client {
     }
   }
 
+  /**
+   * Compress a file and return the pre-compression SHA256 and size.
+   * This is a helper function for implementing compression using the
+   * Content-Encoding related parameters (transferSha256 and transferSize)
+   * in the `src/controller.js` class
+   */
+  async compressFile(opts) {
+    opts = runSchema(opts, Joi.object().keys({
+      inputFilename: Joi.string().required(),
+      compressor: Joi.string().valid(['identity', 'gzip']).default('identity'),
+      outputFilename: Joi.string().required(),
+    }));
+
+    let {inputFilename, compressor, outputFilename} = opts;
+
+    let inputStream = fs.createReadStream(inputFilename);
+    let outputStream = fs.createWriteStream(outputFilename);
+    let preCompressionDigest = new DigestStream();
+    let postCompressionDigest = new DigestStream();
+    let compressionStream;
+    switch (compressor) {
+      case 'gzip':
+        compressionStream = zlib.createGzip();
+        break;
+      case 'identity':
+        compressionStream = new stream.PassThrough();
+        break;
+    }
+    return new Promise((resolve, reject) => {
+      inputStream.on('error', reject);
+      outputStream.on('error', reject);
+      preCompressionDigest.on('error', reject);
+      postCompressionDigest.on('error', reject);
+      compressionStream.on('error', reject);
+
+      outputStream.on('finish', () => {
+        resolve({
+          sha256: preCompressionDigest.hash,
+          size: preCompressionDigest.size,
+          transferSha256: postCompressionDigest.hash,
+          transferSize: postCompressionDigest.size,
+        });
+      });
+
+      inputStream
+        .pipe(preCompressionDigest)
+        .pipe(compressionStream)
+        .pipe(postCompressionDigest)
+        .pipe(outputStream);
+
+    });
+  }
 
   /**
    * Take the list of requests in interchange format and 

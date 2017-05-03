@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const fs = require('fs');
+const fs = require('mz/fs');
 const stream = require('stream');
 const assume = require('assume');
 //const sinon = require('sinon');
@@ -155,6 +155,24 @@ describe('Client', () => {
     });
 
 
+  });
+
+  describe.only('Compress a file', () => {
+    it('should compress a file correctly', async () => {
+      let result = await client.compressFile({
+        inputFilename: bigfile,
+        compressor: 'gzip',
+        outputFilename: bigfile + '.gz',
+      });
+
+      assume(result).has.property('sha256', bigfilehash);
+      assume(result).has.property('size', bigfilesize);
+      let outputSize = (await fs.stat(bigfile + '.gz')).size;
+      assume(result).has.property('transferSize', outputSize);
+      let outputContents = await fs.readFile(bigfile + '.gz');
+      let outputHash = crypto.createHash('sha256').update(outputContents).digest('hex');
+      assume(result).has.property('transferSha256', outputHash);
+    });
   });
 
   describe('Multiple Part Uploads', () => {
