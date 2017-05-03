@@ -1007,6 +1007,73 @@ describe('Controller', () => {
       assume(result.headers).has.property('x-amz-tagging', 'tag1=value1&tag2=value2');
     });
 
+    it('should support gzip content-encoding', async () => {
+      let transferSha256 = crypto.createHash('sha256').update('gzip single part').digest('hex');
+      let result = await controller.generateSinglepartRequest({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        sha256: sha256,
+        transferSha256: transferSha256,
+        size: 1024,
+        contentEncoding: 'gzip',
+      });
+      assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
+      assume(result.headers).has.property('x-amz-meta-transfer-sha256', transferSha256);
+    });
+
+    it('should support identity content-encoding', async () => {
+      let result = await controller.generateSinglepartRequest({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        sha256: sha256,
+        size: 1024,
+        contentEncoding: 'identity',
+      });
+      assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
+      assume(result.headers).has.property('x-amz-meta-transfer-sha256', sha256);
+      assume(result.headers).has.property('content-encoding', 'identity');
+    });
+
+
+    it('should support no specified content-encoding', async () => {
+      let result = await controller.generateSinglepartRequest({
+        bucket: 'example-bucket',
+        key: 'example-key',
+        sha256: sha256,
+        size: 1024,
+      });
+      assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
+      assume(result.headers).has.property('x-amz-meta-transfer-sha256', sha256);
+      assume(result.headers).has.property('content-encoding', 'identity');
+    });
+
+    it('should throw for invalid content-encoding values with identity encoding', async () => {
+      // Just to make sure that no request goes out if the test fails
+      let transferSha256 = crypto.createHash('sha256').update('aaa').digest('hex');
+      controller.runner = () => { throw new Error(); }
+      return assertReject(controller.generateSinglepartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        sha256: sha256,
+        transferSha256: transferSha256,
+        size: 1,
+        storageClass: 'INVALID',
+      }));
+    });
+
+    it('should throw for missing transferSha256 with non-identity encoding', async () => {
+      // Just to make sure that no request goes out if the test fails
+      controller.runner = () => { throw new Error(); }
+      return assertReject(controller.generateSinglepartRequest({
+        bucket: 'bucket',
+        key: 'key',
+        sha256: sha256,
+        contentEncoding: 'gzip',
+        size: 1,
+        storageClass: 'INVALID',
+      }));
+    });
+      
     it('should throw for invalid storage classes', async () => {
       // Just to make sure that no request goes out if the test fails
       controller.runner = () => { throw new Error(); }
@@ -1043,11 +1110,9 @@ describe('Controller', () => {
         sha256: sha256,
         size: 1,
         contentType: 'content-type',
-        contentEncoding: 'content-encoding',
         contentDisposition: 'content-disposition',
       });
       assume(result.headers).has.property('content-type', 'content-type');
-      assume(result.headers).has.property('content-encoding', 'content-encoding');
       assume(result.headers).has.property('content-disposition', 'content-disposition');
     });
       
