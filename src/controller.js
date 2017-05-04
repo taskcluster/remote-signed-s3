@@ -40,10 +40,18 @@ class Controller {
       runner: Joi.any(),
       runnerOpts: Joi.object(),
       vhostAddressing: Joi.boolean().default(true),
+      accessKeyId: Joi.string().default(process.env.AWS_ACCESS_KEY_ID || ''),
+      secretAccessKey: Joi.string().default(process.env.AWS_SECRET_ACCESS_KEY || ''),
     }).without('runner', 'runnerOpts').optionalKeys(['runner', 'runnerOpts']));
 
     this.region = opts.region;
     let runner = opts.runner;
+
+    // Store the credentials
+    this.credentials = {
+      accessKeyId: opts.accessKeyId,
+      secretAccessKey: opts.secretAccessKey,
+    }
 
     // we don't want to get too specific into the internal API of the run() method,
     // so we're only saving the .run() method of the runner class that we're creating here. 
@@ -60,7 +68,7 @@ class Controller {
     this.s3host = `${s3region}.amazonaws.com`;
 
     // These values are used for unit testing to direct the 
-    this.s3protocol = undefined;
+    this.s3protocol = 'https:';
     this.s3port = undefined;
   }
 
@@ -258,7 +266,12 @@ class Controller {
       if (tag.toString('utf8').length > 128) {
         throw new Error('S3 object tag keys must be 128 or fewer characters');
       }
-      if (tags[tag].toString('utf8').length > 256) {
+      let tagValue = tags[tag];
+      // Let's convert numbers into decimal number strings
+      if (typeof tagValue === 'number') {
+        tagValue = tagValue.toString(10);
+      }
+      if (tagValue.toString('utf8').length > 256) {
         throw new Error('S3 object tag values must be 256 or fewer characters');
       }
     }
@@ -276,7 +289,7 @@ class Controller {
         if (typeof value === 'number') {
           value = Number(value).toString(10);
         } else if (typeof value !== 'string') {
-          throw new Error('Metadata values must be strings or numbers');
+          throw new Error('Metadata values must be strings or numbers not ' + typeof value);
         }
         // VERIFY that the x-amz-meta- prefix is not included in the 2048 unicode
         // character limit before removing it from the count.  I suspect that
@@ -309,7 +322,7 @@ class Controller {
   __generateRequestBase(opts) {
     opts = runSchema(opts, Joi.object().keys({
       bucket: schemas.bucket.required(),
-      key: schemas.bucket.required(),
+      key: schemas.key.required(),
       method: Joi.string().required(),
       query: Joi.string(),
       headers: Joi.object().default({}),
@@ -371,7 +384,7 @@ class Controller {
 
     if (signed) {
       request.signQuery = true;
-      request = aws4.sign(request);
+      request = aws4.sign(request, this.credentials);
 
       let pathParts = request.path.split('?');
       if (pathParts.length !== 2) {
@@ -401,7 +414,9 @@ class Controller {
       bucket: schemas.bucket.required(),
       key: schemas.key.required(),
       sha256: schemas.sha256.required(),
+      transferSha256: schemas.sha256,
       size: schemas.mpSize.required(),
+      transferSize: schemas.mpSize,
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
       metadata: schemas.metadata,
@@ -414,7 +429,9 @@ class Controller {
       bucket,
       key,
       sha256,
+      transferSha256,
       size,
+      transferSize,
       permissions,
       storageClass,
       metadata,
@@ -431,22 +448,43 @@ class Controller {
       throw new Error('Object must total fewer than 5 TB'); 
     }
 
-    let headers = this.__generateMetadataHeaders(metadata, {
+    let headers = {
       'content-sha256': sha256,
       'content-length': size,
-    });
+    };
+
+    // Figure out content-encoding and sha256 values
+    if (contentEncoding && contentEncoding !== 'identity') {
+      if (!transferSha256) {
+        throw new Error('When using Content-Encoding, a transferSha256 value must be given');
+      }
+      headers['transfer-sha256'] = transferSha256;
+      if (!transferSize) {
+        throw new Error('When using Content-Encoding, a transferSize must be given');
+      }
+      headers['transfer-length'] = transferSize;
+    } else {
+      if (transferSha256 && transferSha256 !== sha256) {
+        throw new Error('When not using content-encoding, optional parameter transferSha256 must match sha256');
+      }
+      headers['transfer-sha256'] = sha256;
+      if (transferSize && transferSize !== size) {
+        throw new Error('When not using content-encoding, optional parameter transferSize must match size');
+      }
+      headers['transfer-length'] = size;
+    }
+
+    headers = this.__generateMetadataHeaders(metadata, headers);
 
     headers['x-amz-storage-class'] = storageClass;
 
     if (contentType) {
       headers['content-type'] = contentType;
     }
-    if (contentEncoding) {
-      headers['content-encoding'] = contentEncoding;
-    }
     if (contentDisposition) {
       headers['content-disposition'] = contentDisposition;
     }
+    headers['content-encoding'] = contentEncoding || 'identity';
 
     // If we have permissions, set those values on the headers
     if (permissions) {
@@ -462,7 +500,7 @@ class Controller {
       method: 'POST',
       query: 'uploads=',
       headers: headers,
-    }));
+    }), this.credentials);
     
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest)
@@ -522,7 +560,7 @@ class Controller {
           'x-amz-content-sha256': part.sha256,
           'content-length': part.size,
         },
-      }));
+      }), this.credentials);
 
       requests.push(this.__serializeRequest(signedRequest));
     }
@@ -562,7 +600,7 @@ class Controller {
 
     unsignedRequest.body = requestBody;
     
-    let signedRequest = aws4.sign(unsignedRequest);
+    let signedRequest = aws4.sign(unsignedRequest, this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -610,7 +648,7 @@ class Controller {
         'X-Amz-Content-Sha256': requestBodySha256.digest('hex'),
         'Content-Length': requestBody.length,
       },
-    }));
+    }), this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -626,7 +664,7 @@ class Controller {
     }
 
     if (tags) {
-      await this.__tagObject(opts);
+      await this.__tagObject({bucket, key, tags});
     }
 
     return multipartEtag;
@@ -650,8 +688,8 @@ class Controller {
         'content-length': 0,
         'x-amx-content-sha256': emptysha256,
       },
-      query: 'uploadId=',
-    }));
+      query: `uploadId=${uploadId}`,
+    }), this.credentials);
 
     let response = await this.runner({
       req: this.__serializeRequest(signedRequest),
@@ -678,7 +716,9 @@ class Controller {
       bucket: schemas.bucket.required(),
       key: schemas.key.required(),
       sha256: schemas.sha256.required(),
+      transferSha256: schemas.sha256,
       size: schemas.spSize.required(),
+      transferSize: schemas.spSize,
       tags: schemas.tags,
       permissions: schemas.permissions,
       storageClass: schemas.storageClass,
@@ -692,7 +732,9 @@ class Controller {
       bucket,
       key,
       sha256,
+      transferSha256,
       size,
+      transferSize,
       tags,
       permissions,
       storageClass,
@@ -704,25 +746,48 @@ class Controller {
 
     this.__validateTags(tags);
 
-    let headers = this.__generateMetadataHeaders(metadata, {
+    let headers = {
       'content-sha256': sha256,
       'content-length': size,
-    });
+    };
+
+    // Figure out content-encoding and sha256 values
+    if (contentEncoding && contentEncoding !== 'identity') {
+      if (!transferSha256) {
+        throw new Error('When using Content-Encoding, a transferSha256 value must be given');
+      }
+      headers['transfer-sha256'] = transferSha256;
+      if (!transferSize) {
+        throw new Error('When using Content-Encoding, a transfer-size must be given');
+      }
+      headers['transfer-length'] = transferSize;
+    } else {
+      if (transferSha256 && transferSha256 !== sha256) {
+        throw new Error('When not using content-encoding, optional parameter transferSha256 must match sha256');
+      }
+      headers['transfer-sha256'] = sha256;
+      transferSha256 = sha256;
+      if (transferSize && transferSize !== size) {
+        throw new Error('When not using content-encoding, optional parameter transferSize must match size');
+      }
+      headers['transfer-length'] = size;
+      transferSize = size;
+    }
+
+
+    headers = this.__generateMetadataHeaders(metadata, headers);
 
     headers['x-amz-storage-class'] = storageClass;
-    headers['x-amz-content-sha256'] = sha256;
-    headers['content-length'] = Number(size).toString(10);
+    headers['x-amz-content-sha256'] = transferSha256;
+    headers['content-length'] = Number(transferSize).toString(10);
 
     if (contentType) {
       headers['content-type'] = contentType;
     }
-    if (contentEncoding) {
-      headers['content-encoding'] = contentEncoding;
-    }
     if (contentDisposition) {
       headers['content-disposition'] = contentDisposition;
     }
-
+    headers['content-encoding'] = contentEncoding || 'identity';
 
     if (tags) {
       headers['x-amz-tagging'] = qs.stringify(tags);
@@ -740,7 +805,7 @@ class Controller {
       key,
       method: 'PUT',
       headers: headers,
-    }));
+    }), this.credentials);
 
     return this.__serializeRequest(signedRequest);
   }

@@ -1,6 +1,6 @@
 {
   "name": "remotely-signed-s3",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Do remote signing for S3 using V4 signatures",
   "main": "lib/index.js",
   "dependencies": {
@@ -15,9 +15,9 @@
     "assume": "^1.4.1",
     "babel-compile": "^2.0.0",
     "babel-preset-taskcluster": "^3.0.0",
+    "mocha": "^3.2.0",
     "sinon": "^1.17.7",
-    "source-map-support": "^0.4.11",
-    "mocha": "^3.2.0"
+    "source-map-support": "^0.4.11"
   },
   "scripts": {
     "compile": "babel-compile -p taskcluster src:lib test-src:test",
@@ -26,8 +26,27 @@
     "test": "mocha $MOCHA_FLAGS"
   },
   "files": [
-    "lib/",
-    "src/",
+    "lib/client.js",
+    "lib/client.js.map",
+    "lib/controller.js",
+    "lib/controller.js.map",
+    "lib/digest-stream.js",
+    "lib/digest-stream.js.map",
+    "lib/index.js",
+    "lib/index.js.map",
+    "lib/interchange-format.js",
+    "lib/interchange-format.js.map",
+    "lib/runner.js",
+    "lib/runner.js.map",
+    "lib/schema.js",
+    "lib/schema.js.map",
+    "src/client.js",
+    "src/controller.js",
+    "src/digest-stream.js",
+    "src/index.js",
+    "src/interchange-format.js",
+    "src/runner.js",
+    "src/schema.js",
     "README.md"
   ],
   "keywords": [
