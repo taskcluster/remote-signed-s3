@@ -74,7 +74,7 @@ describe('Client', () => {
     it('should pick multipart for a big file', () => {
       assume(client.__useMulti(1024*1024*1024*1024)).to.be.true();
     });
-    
+
     it('should pick multipart for a small file when forcing multipart', () => {
       assume(client.__useMulti(1024*1024*5, true, false)).to.be.true();
     });
@@ -139,7 +139,7 @@ describe('Client', () => {
           sha256: info.sha256
         }
       };
-      
+
       let actual = await client.runUpload(requests, info);
 
       let expectedEtags = [info.sha256];
@@ -157,7 +157,7 @@ describe('Client', () => {
 
   });
 
-  describe.only('Compress a file', () => {
+  describe('Compress a file', () => {
     it('should compress a file correctly', async () => {
       let result = await client.compressFile({
         inputFilename: bigfile,
