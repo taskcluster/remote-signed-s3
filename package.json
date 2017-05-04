@@ -1,6 +1,6 @@
 {
   "name": "remotely-signed-s3",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Do remote signing for S3 using V4 signatures",
   "main": "lib/index.js",
   "dependencies": {
@@ -38,15 +38,15 @@
     "lib/interchange-format.js.map",
     "lib/runner.js",
     "lib/runner.js.map",
-    "lib/schema.js",
-    "lib/schema.js.map",
+    "lib/schemas.js",
+    "lib/schemas.js.map",
     "src/client.js",
     "src/controller.js",
     "src/digest-stream.js",
     "src/index.js",
     "src/interchange-format.js",
     "src/runner.js",
-    "src/schema.js",
+    "src/schemas.js",
     "README.md"
   ],
   "keywords": [
