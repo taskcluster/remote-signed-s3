@@ -203,6 +203,10 @@ class Client {
    * This is a helper function for implementing compression using the
    * Content-Encoding related parameters (transferSha256 and transferSize)
    * in the `src/controller.js` class
+   *
+   * NOTE: This must be used before prepareUpload, and for multipart uploads
+   * you need to pass the outputFilename specified here instead of the input
+   * one
    */
   async compressFile(opts) {
     opts = runSchema(opts, Joi.object().keys({
@@ -234,12 +238,21 @@ class Client {
       compressionStream.on('error', reject);
 
       outputStream.on('finish', () => {
-        resolve({
+        let info = {
           sha256: preCompressionDigest.hash,
           size: preCompressionDigest.size,
           transferSha256: postCompressionDigest.hash,
           transferSize: postCompressionDigest.size,
-        });
+        };
+        switch (compressor) {
+          case 'identity':
+            info.contentEncoding = 'identity';
+            break;
+          case 'gzip':
+            info.contentEncoding = 'gzip';
+            break;
+        }
+        resolve(info);
       });
 
       inputStream
@@ -249,6 +262,25 @@ class Client {
         .pipe(outputStream);
 
     });
+  }
+
+  /**
+   * Take a request and upload metadata and return a string wihch represents
+   * an invocation of the curl command line which approximates the equivalent
+   * http requests which this class would make
+   */
+  __curl(request, upload) {
+    let {headers, method, url} = request;
+    let {filename} = upload;
+    let command = ['curl'];
+    method = method || 'GET';
+    command.push(`-X ${method}`);
+    for (let header in headers) {
+      command.push(`-H "${header}: ${headers[header]}"`);
+    }
+    command.push(url);
+    command.push(`--data-binary @${upload.filename}`)
+    return command.join(' ');
   }
 
   /**
@@ -293,15 +325,18 @@ class Client {
       };
 
       let result = await this.runner.run({req, body});
+
       if (result.statusCode >= 300) {
         let err = new Error(`Failed to run a request ${req.method} ${req.url}`);
         err.url = req.url;
         err.method = req.method;
         err.headers = req.headers;
-        err.response = result.response;
+        err.body = result.body.toString();
         throw err;
       }
+
       let etag;
+
       if (result && result.headers && result.headers.etag) {
         // This header is occasionally returned wrapped in quotation marks.
         etag = result.headers.etag.trim();

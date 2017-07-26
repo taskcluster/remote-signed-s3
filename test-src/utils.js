@@ -9,7 +9,7 @@ async function assertReject(promise) {
   });
 }
 
-describe('assertRejectn', () => {
+describe('assertReject', () => {
   it('rejects for resolved promise', () => {
     return assertReject(assertReject(Promise.resolve()));
   });

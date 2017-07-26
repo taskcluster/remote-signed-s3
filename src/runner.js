@@ -148,7 +148,7 @@ class Runner {
         });
 
         digestStream.on('end', () => {
-          let debugStr = `COMPLETE ${method} ${url}`;
+          let debugStr = `COMPLETE (streaming) ${method} ${url}`;
           if (request.headers) {
             debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
           }
@@ -174,7 +174,7 @@ class Runner {
           resolve(responseHandler(response));
         });
 
-        let debugStr = `COMPLETE ${method} ${url}`;
+        let debugStr = `COMPLETE (buffered) ${method} ${url}`;
         if (request.headers) {
           debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
         }
@@ -221,9 +221,15 @@ class Runner {
         let responseData = [];
         let responseHash = crypto.createHash('sha256').update('');
 
+        response.on('error', reject);
+
         response.on('data', data => {
-          responseData.push(data);
-          responseHash.update(data);
+          try {
+            responseData.push(data);
+            responseHash.update(data);
+          } catch (err) {
+            reject(err);
+          }
         });
 
         response.on('end', () => {
@@ -233,11 +239,12 @@ class Runner {
             let statusCode = response.statusCode;
             let statusMessage = response.statusMessage;
 
-            let debugStr = `RESPONSE ${statusCode} ${statusMessage} ${method} ${url}`;
+            let debugStr = `RESPONSE (buffered) ${statusCode} ${statusMessage} ${method} ${url}`;
             if (headers) {
               debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
             }
             debugStr += ` ${responseHash.digest('hex')} ${body.length} bytes`;
+            debugStr += `\n ${body.slice(0,1024)}`;
             debugResponse(debugStr);
 
             resolve({body, headers, statusCode, statusMessage});
@@ -267,6 +274,7 @@ class Runner {
     }
 
     debugRequest(debugStr);
+
     request.on('aborted', () => {
       request.emit('error', new Error('Server Hangup'));
     });
