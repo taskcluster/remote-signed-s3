@@ -213,21 +213,26 @@ class Client {
       inputFilename: Joi.string().required(),
       compressor: Joi.string().valid(['identity', 'gzip']).default('identity'),
       outputFilename: Joi.string().required(),
+      sha256: schemas.sha256.required(),
+      size: Joi.number().required(),
     }));
 
-    let {inputFilename, compressor, outputFilename} = opts;
+    let {inputFilename, compressor, outputFilename, sha256, size} = opts;
 
     let inputStream = fs.createReadStream(inputFilename);
     let outputStream = fs.createWriteStream(outputFilename);
     let preCompressionDigest = new DigestStream();
     let postCompressionDigest = new DigestStream();
     let compressionStream;
+    let contentEncoding;
     switch (compressor) {
       case 'gzip':
         compressionStream = zlib.createGzip();
+        contentEncoding = 'gzip';
         break;
       case 'identity':
         compressionStream = new stream.PassThrough();
+        contentEncoding = 'identity';
         break;
     }
     return new Promise((resolve, reject) => {
@@ -238,21 +243,17 @@ class Client {
       compressionStream.on('error', reject);
 
       outputStream.on('finish', () => {
-        let info = {
-          sha256: preCompressionDigest.hash,
-          size: preCompressionDigest.size,
+        if (preCompressionDigest.hash !== sha256) {
+          return reject(new Error('File contents changed before compression'));
+        }
+        if (preCompressionDigest.size !== size) {
+          return reject(new Error('File contents changed before compression'));
+        }
+        resolve({
           transferSha256: postCompressionDigest.hash,
           transferSize: postCompressionDigest.size,
-        };
-        switch (compressor) {
-          case 'identity':
-            info.contentEncoding = 'identity';
-            break;
-          case 'gzip':
-            info.contentEncoding = 'gzip';
-            break;
-        }
-        resolve(info);
+          contentEncoding 
+        });
       });
 
       inputStream
@@ -260,7 +261,6 @@ class Client {
         .pipe(compressionStream)
         .pipe(postCompressionDigest)
         .pipe(outputStream);
-
     });
   }
 

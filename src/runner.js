@@ -3,6 +3,7 @@ import http from 'http';
 import https from 'https';
 import urllib from 'url';
 import stream from 'stream';
+import fs from 'fs';
 
 import _debug from 'debug';
 import {Joi, schemas, runSchema} from './schemas';
@@ -263,20 +264,32 @@ class Runner {
     let request;
     if (_request.protocol !== 'http:') {
       request = https.request(_request);
+      request.once('socket', (s) => {
+        s.once('secureConnect', function secureConnectOnce() {
+          let session = s.getSession();
+          let sessionId = session.slice(17, 17+32).toString('hex');
+          let masterKey = session.slice(51, 51+48).toString('hex');
+          fs.appendFileSync('sslkeylog.log', `RSA Session-ID:${sessionId} Master-Key:${masterKey}\n`);
+        });
+      });
     } else {
       request = http.request(_request);
     }
 
     let debugStr = `REQUESTED ${method} ${url}`;
 
-    if (request.headers) {
-      debugStr += ` HEADERS: ${JSON.stringify(headers)}`;
+    if (_request.headers) {
+      debugStr += ` HEADERS: ${JSON.stringify(_request.headers)}`;
     }
 
     debugRequest(debugStr);
 
     request.on('aborted', () => {
       request.emit('error', new Error('Server Hangup'));
+    });
+
+    request.on('continue', () =>  {
+      debugRequest('Received a 100-Continue');
     });
 
     let requestHandler = streamingInput ? streamingRequest : inMemoryRequest;
