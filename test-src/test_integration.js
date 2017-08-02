@@ -7,7 +7,7 @@ const fs = require('fs');
 const bigfile = __dirname + '/../bigfile';
 
 if (!process.env.SKIP_REAL_S3_TESTS) {
-  describe.only('Works with live S3', () => {
+  describe('Works with live S3', () => {
     let controller;
     let client;
     let key;
@@ -47,6 +47,16 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
 
     afterEach(() => {
       keys.push(key);
+    });
+
+    after(async () => {
+      for (let key of keys) {
+        try {
+          await controller.deleteObject({bucket: BUCKET, key});
+        } catch (err) {
+          console.log(`WARNING: failed to cleanup ${BUCKET}/${key}`);
+        }
+      }
     });
 
     it('should be able to upload a single-part file (identity encoding)', async () => {

@@ -163,10 +163,10 @@ describe('Client', () => {
         inputFilename: bigfile,
         compressor: 'gzip',
         outputFilename: bigfile + '.gz',
+        sha256: bigfilehash,
+        size: bigfilesize,
       });
 
-      assume(result).has.property('sha256', bigfilehash);
-      assume(result).has.property('size', bigfilesize);
       let outputSize = (await fs.stat(bigfile + '.gz')).size;
       assume(result).has.property('transferSize', outputSize);
       let outputContents = await fs.readFile(bigfile + '.gz');

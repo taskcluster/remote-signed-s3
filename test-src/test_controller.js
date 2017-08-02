@@ -81,7 +81,7 @@ describe('Controller', () => {
     }
   });
 
-  describe.only('S3', () => {
+  describe('S3', () => {
 
     // Here's the list of tests we want.  Note that bucket and key are
     // automagically added to params, so only include params which aren't
