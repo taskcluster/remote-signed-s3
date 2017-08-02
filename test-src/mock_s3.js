@@ -51,6 +51,7 @@ async function createMockS3Server(opts) {
     'completeMPUpload',
     'abortMPUpload',
     'tagObject',
+    'deleteObject',
     'generate200Error',
     'generate403Error',
   ];
@@ -268,6 +269,19 @@ async function createMockS3Server(opts) {
                 Connection: 'keep-alive',
                 Server: 'AmazonS3',       
               }
+              break;
+            case 'deleteObject':
+              if (request.method !== 'DELETE') {
+                failures.push('incorrect http method');
+              }
+              statusCode = 204;
+              statusMessage = 'NoContent';
+              body = '';
+              headers = {
+                'x-amz-id-2': 'Uuag1LuByRx9e6j5Onimru9pO4ZVKnJ2Qz7/C1NPcfTWAtRPfTaOFg==',
+                'x-amz-request-id': '656c76696e6727732072657175657374',
+                Date: new Date().toGMTString(),
+              };
               break;
             case 'tagObject':
               if (request.method !== 'PUT') {

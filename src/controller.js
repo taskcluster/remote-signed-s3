@@ -809,6 +809,40 @@ class Controller {
 
     return this.__serializeRequest(signedRequest);
   }
+
+
+  /**
+   * Delete a key from S3
+   * http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadAbort.html
+   */
+  async deleteObject(opts) {
+   opts = runSchema(opts, Joi.object({
+     bucket: schemas.bucket.required(),
+     key: schemas.key.required(),
+   }));
+
+    let {bucket, key} = opts;
+
+    let signedRequest = aws4.sign(this.__generateRequestBase({
+      bucket,
+      key,
+      method: 'DELETE',
+      headers: {
+        'content-length': 0,
+        'x-amx-content-sha256': emptysha256,
+      },
+    }), this.credentials);
+
+    let response = await this.runner({
+      req: this.__serializeRequest(signedRequest),
+    });
+
+    parseS3Response(response.body);
+
+    if (response.statusCode !== 204) {
+      throw new Error('Could not delete key');
+    }
+  }
 }
 
 /**

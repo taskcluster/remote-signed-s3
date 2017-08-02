@@ -81,7 +81,7 @@ describe('Controller', () => {
     }
   });
 
-  describe('S3', () => {
+  describe.only('S3', () => {
 
     // Here's the list of tests we want.  Note that bucket and key are
     // automagically added to params, so only include params which aren't
@@ -120,7 +120,15 @@ describe('Controller', () => {
         params: () => {
           return {tags: {car: 'fast', money: 'lots'}};
         }
+      }, {
+        name: 'Delete Object',
+        type: 'deleteObject',
+        func: 'deleteObject',
+        params: () => {
+          return {};
+        }
       },
+
     ];
 
     for (let _test of tests) {
