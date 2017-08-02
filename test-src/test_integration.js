@@ -3,11 +3,23 @@ const DigestStream = require('../lib/digest-stream');
 const BUCKET = 'test-bucket-for-any-garbage';
 const uuid = require('uuid');
 const fs = require('fs');
+const {tmpName} = require('tmp');
 
 const bigfile = __dirname + '/../bigfile';
 
+function rm(f) {
+  return new Promise((resolve, reject) => {
+    fs.unlink(f, err => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+}
+
 if (!process.env.SKIP_REAL_S3_TESTS) {
-  describe.only('Works with live S3', () => {
+  describe('Works with live S3', () => {
     let controller;
     let client;
     let key;
@@ -53,22 +65,52 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
     after(async () => {
       for (let key of keys) {
         try {
-          //await controller.deleteObject({bucket: BUCKET, key});
+          await controller.deleteObject({bucket: BUCKET, key});
         } catch (err) {
           console.log(`WARNING: failed to cleanup ${BUCKET}/${key}`);
         }
       }
-      await Promise.all(cleanupFiles.map(f => {
-        return new Promise((resolve, reject) => {
-          fs.unlink(f, err => {
-            if (err) {
-              return reject(err);
-            }
-            return resolve();
-          });
-        });
-      }));
+      await Promise.all(cleanupFiles.map(f => rm(f)));
     });
+    
+    async function validateDownload() {
+      let output = await new Promise((resolve, reject) => {
+        tmpName((err, name) => {
+          if (err) {
+            return reject(err);
+          }
+          return resolve(name);
+        });
+      });
+      try {
+        await client.downloadObject({bucket: BUCKET, key, output});
+      } catch (err) {
+        await rm(output);
+        throw err;
+      }
+
+      let ds = new DigestStream();
+      let rs = fs.createReadStream(output);
+      let ws = fs.createWriteStream('/dev/null');
+
+      return new Promise((resolve, reject) => {
+        ds.on('error', reject);
+        rs.on('error', reject);
+        ws.on('error', reject);
+
+        ds.on('end', () => {
+          if (ds.size !== bigfilesize) {
+            reject(new Error('Downloaded file size mismatch'));
+          }
+          if (ds.hash !== bigfilehash) {
+            reject(new Error('Downloaded file sha256 mismatch'));
+          }
+          resolve();
+        });
+
+        rs.pipe(ds).pipe(ws);
+      });
+    }
 
     it('should be able to upload a single-part file (identity encoding)', async () => {
       let upload = await client.prepareUpload({
@@ -91,6 +133,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       });
       await client.runUpload(request, upload);
 
+      await validateDownload();
     });
 
     it('should be able to upload a single-part file (gzip encoding)', async () => {
@@ -118,6 +161,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       });
       await client.runUpload(request, upload);
 
+      await validateDownload();
     });
 
     it('should be able to upload a multi-part file (identity encoding)', async () => {
@@ -163,6 +207,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
         uploadId,
       });
 
+      await validateDownload();
     });
 
     it('should be able to upload a multi-part file (gzip encoding)', async () => {
@@ -211,6 +256,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
         uploadId,
       });
 
+      await validateDownload();
     });
   });
 }

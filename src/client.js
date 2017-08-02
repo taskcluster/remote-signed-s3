@@ -423,6 +423,160 @@ class Client {
     return {etags, responses};
   }
 
+
+  /**
+   * Download a file and save it to the location specified by 'output'.  Does
+   * validation of download file, and in the case of content-encoding
+   * resources, will also decode the file and validate the decoded version is
+   * valid and matches expectations.  The output option is either a string
+   * which is a filename to store the output, or a stream factory.  We do not
+   * accept streams directly because they do not support retries a stream
+   * factory is a function which takes no arguments and returns a Writable
+   * Stream
+   */
+  async runDownload({request, output}) {
+    await InterchangeFormat.validate(request);
+
+    let preDecompressionDigest = new DigestStream();
+    let postDecompressionDigest = new DigestStream();
+    let outputStream;
+    if (typeof output === 'string') {
+      outputStream = fs.createWriteStream(output);
+    } else if (typeof output === 'function') {
+      outputStream = output();
+    } else {
+      throw new Error('Output is not a supported format');
+    }
+    let decompressionStream;
+
+    return new Promise(async (resolve, reject) => {
+      preDecompressionDigest.on('error', reject);
+      postDecompressionDigest.on('error', reject);
+      outputStream.on('error', reject);
+      
+      let result = await this.runner.run({req: request, streamingOutput: true});
+
+      let contentEncoding = result.headers['content-encoding'];
+      let contentLength = result.headers['content-length'];
+      let expectedTransferSha256 = result.headers['x-amz-meta-transfer-sha256'];
+      let expectedSha256 = result.headers['x-amz-meta-content-sha256'];
+      let expectedTransferSize = result.headers['x-amz-meta-transfer-length'];
+      let expectedSize = result.headers['x-amz-meta-content-length'];
+
+      // We're going to collect these and throw a single error in hopes that it
+      // saves developers time having to redo all their testing for each error
+      // they find
+      let headerErrors = [];
+
+      if (contentEncoding && contentEncoding !== 'gzip' && contentEncoding !== 'identity') {
+        headerErrors.push('Content-Encoding is specified with invalid value');
+      }
+
+      if (!contentLength) {
+        headerErrors.push('Content-Length is mandatory but absent');
+      }
+      if (!expectedTransferSha256) {
+        headerErrors.push('Transfer-Sha256 is mandatory but absent');
+      }
+      if (!expectedSha256) {
+        headerErrors.push('Content-Sha256 is mandatory but absent');
+      }
+      if (!expectedTransferSize) {
+        headerErrors.push('Transfer-Size is mandatory but absent');
+      }
+      if (!expectedSize) {
+        headerErrors.push('Content-Size is mandatory but absent');
+      }
+
+      try {
+        contentLength = parseInt(contentLength, 10);
+      } catch (err) {
+        headerErrors.push('Content-Length is not an integer');
+      }
+
+      try {
+        expectedTransferSize = parseInt(expectedTransferSize, 10);
+      } catch (err) {
+        headerErrors.push('Transfer-Size is not an integer');
+      }
+
+      try {
+        expectedSize = parseInt(expectedSize, 10);
+      } catch (err) {
+        headerErrors.push('Content-Size is not an integer');
+      }
+
+      if (headerErrors.length > 0) {
+        let err = new Error('Errors in the header values: ' + headerErrors.join(', '));
+        err.errors = headerErrors;
+        err.headers = result.headers;
+        return reject(err);
+      }
+
+      if (contentEncoding && contentEncoding === 'gzip') {
+        decompressionStream = new zlib.createGunzip();
+      } else {
+        decompressionStream = new stream.PassThrough();
+      }
+
+      decompressionStream.on('error', reject);
+      result.bodyStream.on('error', reject);
+
+      outputStream.on('finish', () => {
+        let bodyErrors = [];
+        if (preDecompressionDigest.hash !== expectedTransferSha256) {
+          bodyErrors.push('Transfer Sha256 mismatch');
+        }
+        if (postDecompressionDigest.hash !== expectedSha256) {
+          bodyErrors.push('Content Sha256 mismatch');
+        }
+        if (preDecompressionDigest.size !== expectedTransferSize) {
+          bodyErrors.push('Transfer Size mismatch');
+        }
+        if (postDecompressionDigest.size !== expectedSize) {
+          bodyErrors.push('Content Size mismatch');
+        }
+        if (preDecompressionDigest.size !== contentLength) {
+          bodyErrors.push('Content-Length header and Transfer-Size do not match');
+        }
+        if (bodyErrors.length > 0) {
+          let err = new Error('Errors in the body: ' + bodyErrors.join(', '));
+          err.errors = bodyErrors;
+          reject(err);
+        } else {
+          return resolve();
+        }
+        reject(new Error('unimplemented'));
+      });
+
+      result.bodyStream
+        .pipe(preDecompressionDigest)
+        .pipe(decompressionStream)
+        .pipe(postDecompressionDigest)
+        .pipe(outputStream);
+
+    });
+  }
+
+
+  async downloadUrl({url, output}) {
+    return this.runDownload({
+      request: {
+        url,
+        method: 'GET',
+        headers: {},
+      },
+      output,
+    });
+  }
+
+  async downloadObject({region = 'us-east-1', bucket, key, output}) {
+    region = region === 'us-east-1' ? 's3' : 's3-' + region;
+    let url = `https://${bucket}.${region}.amazonaws.com/${key}`;
+    return this.downloadUrl({url, output});
+  }
+
+
 }
 
 module.exports = Client;
