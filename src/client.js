@@ -4,6 +4,7 @@ import zlib from 'zlib';
 import stream from 'stream';
 
 import fs from 'mz/fs';
+import {tmpName} from 'tmp';
 
 import Runner from './runner';
 import InterchangeFormat from './interchange-format';
@@ -183,38 +184,82 @@ class Client {
       forceMP: Joi.boolean().truthy(),
       forceSP: Joi.boolean().truthy(),
       partsize: Joi.number().max(5 * GB).default(this.partsize),
+      compression: Joi.string().valid(['identity', 'gzip']).default('identity'),
+      compressionScratchFile: Joi.string()
     }).without('forceSP', 'forceMP'));
-    let {filename, partsize, forceMP, forceSP} = opts;
 
-    let filesize = (await fs.stat(filename)).size;
+    let {
+      filename,
+      partsize,
+      forceMP, 
+      forceSP,
+      compression,
+      compressionScratchFile
+    } = opts;
+
+    let _filename;
+    let compressionInfo;
+
+    if (compression === 'identity') {
+      _filename = filename;
+    } else {
+      if (!compressionScratchFile) {
+        _filename = await new Promise((resolve, reject) => {
+          tmpName((err, name) => {
+            if (err) return reject(err);
+            resolve(name);
+          });
+        });
+      } else {
+        _filename = compressionScratchFile;
+      }
+
+      compressionInfo = await this.__compressFile({
+        inputFilename: filename,
+        outputFilename: _filename,
+        compressor: compression,
+      });
+
+    }
+
+    let filesize = (await fs.stat(_filename)).size;
+
     if (typeof filesize !== 'number') {
       throw new Error('Unable to determine filesize of ' + filename);
     }
 
+    let result;
     if (this.__useMulti(filesize, forceMP, forceSP)) {
-      return this.__prepareMultipartUpload({filename, partsize});
+      result = await this.__prepareMultipartUpload({filename: _filename, partsize});
     } else {
-      return this.__prepareSinglepartUpload({filename});
+      result = await this.__prepareSinglepartUpload({filename: _filename});
     }
+
+    // NOTE: This will overwrite the sha256 and size values from the __prepare*
+    // functions.  This behaviour is desired so that we can read the files in
+    // the minmal number of times.  We only want to read the original file the
+    // single time.  If we're doing compression, this should be when we feed it
+    // to the GZIP encoder.  If we're not doing compression, we can use the raw
+    // values we're getting from __prepare* functions as they're derived from
+    // the actual file
+    if (compressionInfo) {
+      Object.assign(result, compressionInfo);
+    } else {
+      result.transferSha256 = result.sha256;
+      result.transferSize = result.size;
+    }
+
+    return result;
   }
 
   /**
-   * Compress a file and return the pre-compression SHA256 and size.
-   * This is a helper function for implementing compression using the
-   * Content-Encoding related parameters (transferSha256 and transferSize)
-   * in the `src/controller.js` class
-   *
-   * NOTE: This must be used before prepareUpload, and for multipart uploads
-   * you need to pass the outputFilename specified here instead of the input
-   * one
+   * Compress a file and return the post compression SHA256 and size.
    */
-  async compressFile(opts) {
+  async __compressFile(opts) {
     opts = runSchema(opts, Joi.object().keys({
       inputFilename: Joi.string().required(),
-      compressor: Joi.string().valid(['identity', 'gzip']).default('identity'),
-      outputFilename: Joi.string().required(),
-      sha256: schemas.sha256.required(),
-      size: Joi.number().required(),
+      compressor: Joi.string().valid(['gzip']).default('gzip'),
+      outputFilename: Joi.string(),
     }));
 
     let {inputFilename, compressor, outputFilename, sha256, size} = opts;
@@ -230,10 +275,6 @@ class Client {
         compressionStream = zlib.createGzip();
         contentEncoding = 'gzip';
         break;
-      case 'identity':
-        compressionStream = new stream.PassThrough();
-        contentEncoding = 'identity';
-        break;
     }
     return new Promise((resolve, reject) => {
       inputStream.on('error', reject);
@@ -243,16 +284,13 @@ class Client {
       compressionStream.on('error', reject);
 
       outputStream.on('finish', () => {
-        if (preCompressionDigest.hash !== sha256) {
-          return reject(new Error('File contents changed before compression'));
-        }
-        if (preCompressionDigest.size !== size) {
-          return reject(new Error('File contents changed before compression'));
-        }
         resolve({
+          sha256: preCompressionDigest.hash,
+          size: preCompressionDigest.size,
           transferSha256: postCompressionDigest.hash,
           transferSize: postCompressionDigest.size,
-          contentEncoding 
+          contentEncoding,
+          filename: outputFilename,
         });
       });
 
@@ -293,32 +331,62 @@ class Client {
       filename: Joi.string().required(),
       sha256: schemas.sha256.required(),
       size: Joi.number().required(),
+      transferSha256: schemas.sha256.required(),
+      transferSize: Joi.number().required(),
+      // NOTE: the contentEncoding parameter isn't used, but is allowed so that
+      // we can pass the object we received from prepareUpload into this
+      // function verbatim
+      contentEncoding: Joi.string(),
       parts: schemas.parts.required(),
     }).optionalKeys('parts'));
 
-    let {filename, sha256, size, parts} = upload;
+    let {filename, sha256, size, transferSha256, transferSize, parts} = upload;
     let etags = [];
     let responses = [];
 
+    // If we're not doing content-encoding, we're going to just use the
+    // content-sha256 for the upload.  If we are doing content-encoding, we're
+    // going to need to replace the sha256 and size with the transfer* version
+    // of both
+    let _sha256 = sha256;
+    let _size = size;
+    if (transferSha256 && transferSize) {
+      _sha256 = transferSha256;
+      _size = transferSize;
+    } else if (transferSha256 || transferSize) {
+      throw new Error('When using transferSha256, transferSize is mandatory');
+    }
+
+    // For single part uploads, we get a single request and a single upload
+    // object.  We're going to change those into being lists so that we don't
+    // need to have a different method signature compared to the multipart
+    // uploads
+    if (!parts) {
+      parts = [{sha256: _sha256, size: _size, start: 0}];
+    }
     if (!Array.isArray(request)) {
       request = [request];
     }
 
+    // Validate that all request we're about to run are in the correct format
     for (let req of request) {
       await InterchangeFormat.validate(req);
     }
 
-    if (!parts) {
-      parts = [{sha256, size, start: 0}];
-    }
-
+    // If we have a differing number of requests and upload parts, we've gotten
+    // invalid inputs and should throw an Error
     if (request.length !== parts.length) {
-      throw new Error('Number of requests does not match number of parts');
+      throw new Error('Number of requests does not match number of upload parts');
     }
 
+    // Now we actually run the requests.  Here's where we'd implement concurrency
+    // if we wanted it
     for (let n = 0; n < request.length ; n++) {
       let {sha256, start, size} = parts[n];
       let req = request[n];
+
+      // We create a body factory because we want to use streaming while being
+      // able to do retries.  This is better than doing fully buffered requests
       function body() {
         let end = start + size - 1;
         return fs.createReadStream(filename, {start, end});
@@ -338,23 +406,17 @@ class Client {
       let etag;
 
       if (result && result.headers && result.headers.etag) {
-        // This header is occasionally returned wrapped in quotation marks.
+        // This header is occasionally returned wrapped in quotation marks, but
+        // the S3 api seems to be able to understand the string when it has
+        // them, so we're going to pass it back verbatim, aside from .trim()
         etag = result.headers.etag.trim();
-        /*if (etag.charAt(0) === '"') {
-          etag = etag.slice(1);
-          if (etag.charAt(etag.length - 1) === '"') {
-            etag = etag.slice(0, etag.length - 1);
-          } else {
-            throw new Error('Mismatched quotation marks around ETag');
-          }
-        }*/
       }
 
-      // I'm not entirely happy with this.  It's almost completely 
-      // here for unit tests.  It's not dangerous because a lack of
-      // an ETag will just cause the upload to fail for a multipart
-      // upload because it cannot commit the upload and it is not
-      // important for a single part upload
+      // I'm not entirely happy with this.  It's almost completely here for
+      // unit tests.  It's not dangerous because a lack of an ETag, or the
+      // incorrect value, will just cause the upload to fail for a multipart
+      // upload because it cannot commit the upload and it is not important for
+      // a single part upload
       etags.push(etag || 'NOETAG');
       responses.push(result);
     }

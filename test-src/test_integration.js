@@ -7,13 +7,14 @@ const fs = require('fs');
 const bigfile = __dirname + '/../bigfile';
 
 if (!process.env.SKIP_REAL_S3_TESTS) {
-  describe('Works with live S3', () => {
+  describe.only('Works with live S3', () => {
     let controller;
     let client;
     let key;
     let bigfilesize;
     let bigfilehash;
     let keys = [];
+    let cleanupFiles = [];
 
     before(done => {
       let ds = new DigestStream();
@@ -52,15 +53,25 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
     after(async () => {
       for (let key of keys) {
         try {
-          await controller.deleteObject({bucket: BUCKET, key});
+          //await controller.deleteObject({bucket: BUCKET, key});
         } catch (err) {
           console.log(`WARNING: failed to cleanup ${BUCKET}/${key}`);
         }
       }
+      await Promise.all(cleanupFiles.map(f => {
+        return new Promise((resolve, reject) => {
+          fs.unlink(f, err => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve();
+          });
+        });
+      }));
     });
 
     it('should be able to upload a single-part file (identity encoding)', async () => {
-      let {filename, sha256, size} = await client.prepareUpload({
+      let upload = await client.prepareUpload({
         filename: bigfile,
         forceSP: true,
       });
@@ -72,30 +83,21 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       let request = await controller.generateSinglepartRequest({
         bucket: BUCKET,
         key,
-        sha256,
-        size,
+        sha256: upload.sha256,
+        size: upload.size,
         tags,
         metadata,
         contentType,
       });
-      await client.runUpload(request, {filename, sha256, size});
+      await client.runUpload(request, upload);
 
     });
 
     it('should be able to upload a single-part file (gzip encoding)', async () => {
-      const outfile = bigfile + '.gz';
-
-      let {filename, sha256, size} = await client.prepareUpload({
+      let upload = await client.prepareUpload({
         filename: bigfile,
         forceSP: true,
-      });
-
-      let {transferSha256, transferSize, contentEncoding} = await client.compressFile({
-        inputFilename: bigfile,
-        outputFilename: outfile,
-        compressor: 'gzip',
-        sha256,
-        size,
+        compression: 'gzip'
       });
 
       let tags = {tag1: 'tag-1-value'};
@@ -105,20 +107,21 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       let request = await controller.generateSinglepartRequest({
         bucket: BUCKET,
         key,
-        sha256,
-        size,
-        transferSha256,
-        transferSize,
+        sha256: upload.sha256,
+        size: upload.size,
+        transferSha256: upload.transferSha256,
+        transferSize: upload.transferSize,
         tags,
         metadata,
         contentType,
-        contentEncoding: 'gzip',
+        contentEncoding: upload.contentEncoding,
       });
-      await client.runUpload(request, {filename: outfile, sha256: transferSha256, size: transferSize});
+      await client.runUpload(request, upload);
+
     });
 
     it('should be able to upload a multi-part file (identity encoding)', async () => {
-      let {filename, sha256, size, parts} = await client.prepareUpload({
+      let upload = await client.prepareUpload({
         filename: bigfile,
         forceMP: true,
       });
@@ -130,22 +133,23 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       let uploadId = await controller.initiateMultipartUpload({
         bucket: BUCKET,
         key,
-        sha256,
-        size,
+        sha256: upload.sha256,
+        size: upload.size,
         metadata,
         contentType,
+        contentEncoding: upload.contentEncoding,
       });
 
       let requests = await controller.generateMultipartRequest({
         bucket: BUCKET,
         key,
         uploadId,
-        parts,
+        parts: upload.parts,
       });
 
       let result;
       try {
-        result = await client.runUpload(requests, {filename, sha256, size, parts});
+        result = await client.runUpload(requests, upload);
       } catch (err) {
         await controller.abortMultipartUpload({bucket: BUCKET, key, uploadId});
         throw err;
@@ -162,23 +166,10 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
     });
 
     it('should be able to upload a multi-part file (gzip encoding)', async () => {
-      const outfile = bigfile + '.gz';
-      let {sha256, size} = await client.prepareUpload({
+      let upload = await client.prepareUpload({
         filename: bigfile,
         forceMP: true,
-      });
-
-      let {transferSha256, transferSize, contentEncoding} = await client.compressFile({
-        inputFilename: bigfile,
-        outputFilename: outfile,
-        compressor: 'gzip',
-        sha256,
-        size,
-      });
-
-      let {parts} = await client.prepareUpload({
-        filename: outfile,
-        forceMP: true,
+        compression: 'gzip',
       });
 
       let tags = {tag1: 'tag-1-value'};
@@ -188,25 +179,25 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       let uploadId = await controller.initiateMultipartUpload({
         bucket: BUCKET,
         key,
-        sha256,
-        size,
-        transferSha256,
-        transferSize,
+        sha256: upload.sha256,
+        size: upload.size,
+        transferSha256: upload.transferSha256,
+        transferSize: upload.transferSize,
         metadata,
         contentType,
-        contentEncoding,
+        contentEncoding: upload.contentEncoding,
       });
 
       let requests = await controller.generateMultipartRequest({
         bucket: BUCKET,
         key,
         uploadId,
-        parts,
+        parts: upload.parts,
       });
 
       let result;
       try {
-        result = await client.runUpload(requests, {filename: outfile, sha256: transferSha256, size: transferSize, parts});
+        result = await client.runUpload(requests, upload);
       } catch (err) {
         await controller.abortMultipartUpload({bucket: BUCKET, key, uploadId});
         throw err;

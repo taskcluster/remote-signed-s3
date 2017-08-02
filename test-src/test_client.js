@@ -157,14 +157,12 @@ describe('Client', () => {
 
   });
 
-  describe('Compress a file', () => {
-    it('should compress a file correctly', async () => {
-      let result = await client.compressFile({
+  describe('Compression', () => {
+    it('should compress a file correctly to another file', async () => {
+      let result = await client.__compressFile({
         inputFilename: bigfile,
         compressor: 'gzip',
         outputFilename: bigfile + '.gz',
-        sha256: bigfilehash,
-        size: bigfilesize,
       });
 
       let outputSize = (await fs.stat(bigfile + '.gz')).size;
@@ -172,6 +170,8 @@ describe('Client', () => {
       let outputContents = await fs.readFile(bigfile + '.gz');
       let outputHash = crypto.createHash('sha256').update(outputContents).digest('hex');
       assume(result).has.property('transferSha256', outputHash);
+      assume(result).has.property('contentEncoding', 'gzip');
+      assume(result).has.property('filename', bigfile + '.gz');
     });
   });
 
