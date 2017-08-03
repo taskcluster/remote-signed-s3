@@ -132,7 +132,6 @@ describe('Request Runner', () => {
         },
       });
 
-      console.dir(result);
       assume(runFiveTimes).has.property('callCount', 5);
     });
     
@@ -147,7 +146,6 @@ describe('Request Runner', () => {
         },
       });
 
-      console.dir(result);
       assume(runOneTime).has.property('callCount', 1);
     });    
 
@@ -163,7 +161,6 @@ describe('Request Runner', () => {
         body: fs.createReadStream(__dirname + '/../package.json'),
       });
 
-      console.dir(result);
       assume(runOneTime).has.property('callCount', 1);
     });
   });

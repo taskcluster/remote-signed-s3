@@ -112,7 +112,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       });
     }
 
-    it('should be able to upload a single-part file (identity encoding)', async () => {
+    it('should be able to upload and download a single-part file (identity encoding)', async () => {
       let upload = await client.prepareUpload({
         filename: bigfile,
         forceSP: true,
@@ -136,7 +136,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       await validateDownload();
     });
 
-    it('should be able to upload a single-part file (gzip encoding)', async () => {
+    it('should be able to upload and download a single-part file (gzip encoding)', async () => {
       let upload = await client.prepareUpload({
         filename: bigfile,
         forceSP: true,
@@ -164,7 +164,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       await validateDownload();
     });
 
-    it('should be able to upload a multi-part file (identity encoding)', async () => {
+    it('should be able to upload and download a multi-part file (identity encoding)', async () => {
       let upload = await client.prepareUpload({
         filename: bigfile,
         forceMP: true,
@@ -210,7 +210,7 @@ if (!process.env.SKIP_REAL_S3_TESTS) {
       await validateDownload();
     });
 
-    it('should be able to upload a multi-part file (gzip encoding)', async () => {
+    it('should be able to upload and download a multi-part file (gzip encoding)', async () => {
       let upload = await client.prepareUpload({
         filename: bigfile,
         forceMP: true,

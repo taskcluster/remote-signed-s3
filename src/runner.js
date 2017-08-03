@@ -264,14 +264,17 @@ class Runner {
     let request;
     if (_request.protocol !== 'http:') {
       request = https.request(_request);
-      request.once('socket', (s) => {
-        s.once('secureConnect', function secureConnectOnce() {
-          let session = s.getSession();
-          let sessionId = session.slice(17, 17+32).toString('hex');
-          let masterKey = session.slice(51, 51+48).toString('hex');
-          fs.appendFileSync('sslkeylog.log', `RSA Session-ID:${sessionId} Master-Key:${masterKey}\n`);
-        });
-      });
+      // The following section of code is commented out but left in place so
+      // that we don't have to look it up each time we need to use it.  This is
+      // used to be able to listen in on HTTPS conversations using Wireshark.
+      //request.once('socket', (s) => {
+      //  s.once('secureConnect', function secureConnectOnce() {
+      //    let session = s.getSession();
+      //    let sessionId = session.slice(17, 17+32).toString('hex');
+      //    let masterKey = session.slice(51, 51+48).toString('hex');
+      //    fs.appendFileSync('sslkeylog.log', `RSA Session-ID:${sessionId} Master-Key:${masterKey}\n`);
+      //  });
+      //});
     } else {
       request = http.request(_request);
     }
