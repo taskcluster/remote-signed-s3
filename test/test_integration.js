@@ -1,3 +1,4 @@
+'use strict';
 const { Controller, Client } = require('../');
 const DigestStream = require('../lib/digest-stream');
 const BUCKET = 'test-bucket-for-any-garbage';

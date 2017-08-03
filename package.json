@@ -3,9 +3,11 @@
   "version": "2.0.0",
   "description": "Do remote signing for S3 using V4 signatures",
   "main": "lib/index.js",
+  "engines": {
+    "node": ">=8.1.4"
+  },
   "dependencies": {
     "aws4": "^1.6.0",
-    "babel-runtime": "^6.23.0",
     "debug": "^2.6.8",
     "joi": "^10.6.0",
     "libxmljs": "^0.18.7",
@@ -14,40 +16,21 @@
   },
   "devDependencies": {
     "assume": "^1.4.1",
-    "babel-compile": "^2.0.0",
-    "babel-preset-taskcluster": "^3.0.0",
     "mocha": "^3.4.2",
     "sinon": "^2.3.8",
     "source-map-support": "^0.4.11"
   },
   "scripts": {
-    "compile": "babel-compile -p taskcluster src:lib test-src:test",
-    "prepublish": "npm run compile",
-    "pretest": "npm run compile",
-    "test": "DEBUG= mocha $MOCHA_FLAGS"
+    "test": "mocha $MOCHA_FLAGS"
   },
   "files": [
     "lib/client.js",
-    "lib/client.js.map",
     "lib/controller.js",
-    "lib/controller.js.map",
     "lib/digest-stream.js",
-    "lib/digest-stream.js.map",
     "lib/index.js",
-    "lib/index.js.map",
     "lib/interchange-format.js",
-    "lib/interchange-format.js.map",
     "lib/runner.js",
-    "lib/runner.js.map",
     "lib/schemas.js",
-    "lib/schemas.js.map",
-    "src/client.js",
-    "src/controller.js",
-    "src/digest-stream.js",
-    "src/index.js",
-    "src/interchange-format.js",
-    "src/runner.js",
-    "src/schemas.js",
     "README.md"
   ],
   "keywords": [

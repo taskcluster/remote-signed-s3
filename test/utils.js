@@ -1,3 +1,4 @@
+'use strict';
 async function assertReject(promise) {
   return new Promise(async (res, rej) => {
     try {

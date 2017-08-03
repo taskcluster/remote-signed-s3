@@ -1,3 +1,4 @@
+'use strict';
 let assume = require('assume');
 let libxml = require('libxmljs');
 let { Controller, run, parseS3Response } = require('../lib/controller');

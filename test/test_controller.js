@@ -1,3 +1,4 @@
+'use strict';
 const crypto = require('crypto');
 const http = require('http');
 //const https = require('https');
