@@ -12,7 +12,7 @@ high level interfaces provided will automatically select which version to use.
 
 ## Architecture
 This project is divided into a server-side component called the `Controller`.
-Instances of the `Controller` know how to genereate and sign all the methods
+Instances of the `Controller` know how to generate and sign all the methods
 involved in uploading files to S3.  `Controller`s also know how to run methods
 which must be run from the server.  The methods which must be run from the
 server are the initate, complete and abort methods of the multipart uploads.
@@ -87,7 +87,7 @@ npm install .
 npm test
 ```
 
-There are integration tests which can be run, but require S3 credentails and
+There are integration tests which can be run, but require S3 credentials and
 an existing bucket to test against.
 ```
 export BUCKET=mybucket
