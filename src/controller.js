@@ -558,7 +558,7 @@ class Controller {
         query: `partNumber=${num}&uploadId=${uploadId}`,
         headers: {
           'x-amz-content-sha256': part.sha256,
-          'content-length': part.size,
+          'content-length': Number(part.size).toString(10),
         },
       }), this.credentials);
 

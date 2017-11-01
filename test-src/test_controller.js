@@ -810,7 +810,7 @@ describe('Controller', () => {
         assume(request).has.property('method', 'PUT');
         assume(request).has.property('headers');
         assume(request.headers).has.property('x-amz-content-sha256', parts[n-1].sha256);
-        assume(request.headers).has.property('content-length', parts[n-1].size);
+        assume(request.headers).has.property('content-length', Number(parts[n-1].size).toString(10));
         assume(request.headers).has.property('Host', 'example-bucket.localhost:' + port);
         assume(request.headers).has.property('Authorization');
         assume(request.headers).has.property('X-Amz-Date');
