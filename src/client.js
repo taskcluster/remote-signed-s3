@@ -423,6 +423,15 @@ class Client {
     return {etags, responses};
   }
 
+  /**
+   * Run a request without verification.  This is intended for small 'convenience'
+   * calls, like doing redirects.  The response body is stored in memory and the
+   * results of a runner.run() call are returned as a promise.  The fields of the
+   * resolution value are {body, headers, statusCode, statusMessage}
+   */
+  async runUnverifiedRequest({request, body}) {
+    return this.runner.run({req: request, body: body, streamingOutput: false});
+  }
 
   /**
    * Download a file and save it to the location specified by 'output'.  Does
