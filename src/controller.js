@@ -375,10 +375,25 @@ class Controller {
       key: schemas.key.required(),
       signed: Joi.boolean().default(false),
     }));
-    
-    let {bucket, key, signed} = opts;
+    opts.method = 'GET';
 
-    let request = this.__generateRequestBase({bucket, key, method: 'GET'});
+    return this.generateUrl(opts);
+  }
+   
+  /**
+   * Generate an optionally signed GET URL for an object
+   */
+  async generateUrl(opts) {
+    opts = runSchema(opts, Joi.object().keys({
+      bucket: schemas.bucket.required(),
+      key: schemas.key.required(),
+      signed: Joi.boolean().default(false),
+      method: Joi.string(),
+    }));
+    
+    let {bucket, key, signed, method} = opts;
+
+    let request = this.__generateRequestBase({bucket, key, method});
     let pathname = request.path;
     let search;
 
