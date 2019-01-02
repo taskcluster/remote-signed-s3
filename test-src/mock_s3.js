@@ -106,9 +106,7 @@ async function createMockS3Server(opts) {
 
           // Let's figure out the S3 specific stuff
           let requestDotUrl = urllib.parse(request.url);
-          let requestKey = requestDotUrl.pathname.slice(1);
-          let requestHost = request.headers.host;
-          let requestBucket = requestHost.split('.')[0];
+          let [_, requestBucket, requestKey] = requestDotUrl.pathname.split('/', 3)
           let requestOptions = querystring.parse(requestDotUrl.query);
 
           // Now let's evaluate the data!
