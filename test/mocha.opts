@@ -1,5 +1,4 @@
 --ui tdd
 --timeout 300s
 --reporter spec
---require source-map-support/register
 --require ./test/mochahooks

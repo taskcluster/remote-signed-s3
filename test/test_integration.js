@@ -1,5 +1,5 @@
 const { Controller, Client } = require('../');
-const DigestStream = require('../lib/digest-stream');
+const { DigestStream } = require('../lib/digest-stream');
 const BUCKET = 'test-bucket-for-any-garbage';
 const uuid = require('uuid');
 const fs = require('fs');

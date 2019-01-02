@@ -5,8 +5,8 @@ const assume = require('assume');
 //const sinon = require('sinon');
 const http = require('http');
 
-const DigestStream = require('../lib/digest-stream');
-const Client = require('../lib/client');
+const { DigestStream } = require('../lib/digest-stream');
+const { Client } = require('../lib/client');
 
 const assertReject = require('./utils').assertReject;
 

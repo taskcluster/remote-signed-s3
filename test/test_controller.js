@@ -8,7 +8,7 @@ const qs = require('querystring');
 
 const assume = require('assume');
 const { Controller, parseS3Response } = require('../');
-const DigestStream = require('../lib/digest-stream');
+const { DigestStream } = require('../lib/digest-stream');
 const assertReject = require('./utils').assertReject;
 const InterchangeFormat = require('../lib/interchange-format');
 
