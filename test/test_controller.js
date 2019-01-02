@@ -22,7 +22,7 @@ describe('Controller', () => {
   let bucket = 'test-bucket';
   let key = 'test-key';
   let port = process.env.PORT || 8080;
-  let sandbox = sinon.sandbox.create();
+  let sandbox = sinon.createSandbox();
 
   let bigfilesize;
   let bigfilehash;
