@@ -1,11 +1,14 @@
 language: node_js
 
 env:
-  - CXX=g++-4.8
+  global:
+    - CXX=g++-4.8
+    - SKIP_REAL_S3_TESTS=yes
 
 node_js:
-- '6'
-- '7'
+- '8'
+- '10'
+- '11'
 
 addons:
   apt:
