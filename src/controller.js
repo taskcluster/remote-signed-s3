@@ -42,6 +42,7 @@ class Controller {
       vhostAddressing: Joi.boolean().default(true),
       accessKeyId: Joi.string().default(process.env.AWS_ACCESS_KEY_ID || ''),
       secretAccessKey: Joi.string().default(process.env.AWS_SECRET_ACCESS_KEY || ''),
+      sessionToken: Joi.string().default(process.env.AWS_SESSION_TOKEN || ''),
     }).without('runner', 'runnerOpts').optionalKeys(['runner', 'runnerOpts']));
 
     this.region = opts.region;
@@ -51,6 +52,7 @@ class Controller {
     this.credentials = {
       accessKeyId: opts.accessKeyId,
       secretAccessKey: opts.secretAccessKey,
+      sessionToken: opts.sessionToken,
     }
 
     // we don't want to get too specific into the internal API of the run() method,
