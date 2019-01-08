@@ -1,4 +1,4 @@
-const DigestStream = require('../lib/digest-stream');
+const { DigestStream } = require('../lib/digest-stream');
 const fs = require('fs');
 const crypto = require('crypto');
 const assume = require('assume');

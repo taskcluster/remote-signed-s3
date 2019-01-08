@@ -8,7 +8,7 @@ const qs = require('querystring');
 
 const assume = require('assume');
 const { Controller, parseS3Response } = require('../');
-const DigestStream = require('../lib/digest-stream');
+const { DigestStream } = require('../lib/digest-stream');
 const assertReject = require('./utils').assertReject;
 const InterchangeFormat = require('../lib/interchange-format');
 
@@ -22,7 +22,7 @@ describe('Controller', () => {
   let bucket = 'test-bucket';
   let key = 'test-key';
   let port = process.env.PORT || 8080;
-  let sandbox = sinon.sandbox.create();
+  let sandbox = sinon.createSandbox();
 
   let bigfilesize;
   let bigfilehash;
@@ -52,7 +52,7 @@ describe('Controller', () => {
   });
 
   beforeEach(done => {
-    controller = new Controller();
+    controller = new Controller({vhostAddressing: false});
     controller.s3host = 'localhost';
     controller.s3protocol = 'http:';
     controller.s3port = port;
@@ -194,12 +194,12 @@ describe('Controller', () => {
 
   describe('API Hosts', () => {
     it('should use correct host for us-east-1', () => {
-      let s3 = new Controller({region: 'us-east-1'});
+      let s3 = new Controller({region: 'us-east-1', vhostAddressing: false});
       assume(s3).has.property('s3host', 's3.amazonaws.com');
     });
 
     it('should use correct host for us-west-1', () => {
-      let s3 = new Controller({region: 'us-west-1'});
+      let s3 = new Controller({region: 'us-west-1', vhostAddressing: false});
       assume(s3).has.property('s3host', 's3-us-west-1.amazonaws.com');
     });
   });
@@ -234,8 +234,6 @@ describe('Controller', () => {
     });
     
     it('path addressing without headers or query', () => {
-      controller.vhostAddressing = false;
-
       let expected = {
         region: 'us-east-1',
         service: 's3',
@@ -505,7 +503,7 @@ describe('Controller', () => {
           assume(runner.firstCall.args).has.lengthOf(1);
           let arg = runner.firstCall.args[0];
           assume(arg.req).has.property('method', 'POST');
-          assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+          assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
           assume(arg.req).has.property('headers');
           assume(arg.req.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
         });
@@ -547,7 +545,7 @@ describe('Controller', () => {
         assume(runner.firstCall.args).has.lengthOf(1);
         let arg = runner.firstCall.args[0];
         assume(arg.req).has.property('method', 'POST');
-        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('x-amz-meta-string', 'string');
         assume(arg.req.headers).has.property('x-amz-meta-number', '123');
@@ -589,7 +587,7 @@ describe('Controller', () => {
         assume(runner.firstCall.args).has.lengthOf(1);
         let arg = runner.firstCall.args[0];
         assume(arg.req).has.property('method', 'POST');
-        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
           '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
@@ -633,7 +631,7 @@ describe('Controller', () => {
         assume(runner.firstCall.args).has.lengthOf(1);
         let arg = runner.firstCall.args[0];
         assume(arg.req).has.property('method', 'POST');
-        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
           '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
@@ -674,7 +672,7 @@ describe('Controller', () => {
         assume(runner.firstCall.args).has.lengthOf(1);
         let arg = runner.firstCall.args[0];
         assume(arg.req).has.property('method', 'POST');
-        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('x-amz-meta-content-sha256',
           '605056c0bdc0b2c9d1e32146eac54fe22a807e14b1af34f3d4343f88e592eeef');
@@ -717,7 +715,7 @@ describe('Controller', () => {
         assume(runner.firstCall.args).has.lengthOf(1);
         let arg = runner.firstCall.args[0];
         assume(arg.req).has.property('method', 'POST');
-        assume(arg.req).has.property('url', 'http://bucket.localhost:8080/key?uploads=');
+        assume(arg.req).has.property('url', 'http://localhost:8080/bucket/key?uploads=');
         assume(arg.req).has.property('headers');
         assume(arg.req.headers).has.property('content-type', 'content-type');
         assume(arg.req.headers).has.property('content-disposition', 'content-disposition');
@@ -806,12 +804,12 @@ describe('Controller', () => {
 
       let n = 1;
       for (let request of result) {
-        assume(request).has.property('url', `http://example-bucket.localhost:8080/example-key?partNumber=${n}&uploadId=example-uploadid`);
+        assume(request).has.property('url', `http://localhost:8080/example-bucket/example-key?partNumber=${n}&uploadId=example-uploadid`);
         assume(request).has.property('method', 'PUT');
         assume(request).has.property('headers');
         assume(request.headers).has.property('x-amz-content-sha256', parts[n-1].sha256);
         assume(request.headers).has.property('content-length', Number(parts[n-1].size).toString(10));
-        assume(request.headers).has.property('Host', 'example-bucket.localhost:' + port);
+        assume(request.headers).has.property('Host', 'localhost:' + port);
         assume(request.headers).has.property('Authorization');
         assume(request.headers).has.property('X-Amz-Date');
         n++;
@@ -985,10 +983,11 @@ describe('Controller', () => {
         bucket: 'example-bucket',
         key: 'example-key',
       });
-      assume(result).equals('http://example-bucket.localhost:8080/example-key');
+      assume(result).equals('http://localhost:8080/example-bucket/example-key');
     });
 
     it ('should return the right values for signed', async () => {
+      controller.vhostAddressing = false;
       let result = await controller.generateGetUrl({
         bucket: 'example-bucket',
         key: 'example-key',
@@ -997,8 +996,8 @@ describe('Controller', () => {
 
       result = urllib.parse(result);
       assume(result).has.property('protocol', 'http:');
-      assume(result).has.property('host', 'example-bucket.localhost:8080');
-      assume(result).has.property('pathname', '/example-key');
+      assume(result).has.property('host', 'localhost:8080');
+      assume(result).has.property('pathname', '/example-bucket/example-key');
       result = qs.parse(result.query);
       for (let k of ['Expires', 'Date', 'Algorithm', 'Credential', 'SignedHeaders', 'Signature']) {
         assume(result).has.property('X-Amz-' + k);
@@ -1029,14 +1028,14 @@ describe('Controller', () => {
         }
       });
       
-      assume(result).has.property('url', `http://example-bucket.localhost:8080/example-key`);
+      assume(result).has.property('url', `http://localhost:8080/example-bucket/example-key`);
       assume(result).has.property('method', 'PUT');
       assume(result).has.property('headers');
       assume(result.headers).has.property('x-amz-content-sha256', sha256);
       assume(result.headers).has.property('x-amz-meta-content-sha256', sha256);
       assume(result.headers).has.property('x-amz-meta-content-length', size + '');
       assume(result.headers).has.property('content-length', size + '');
-      assume(result.headers).has.property('Host', 'example-bucket.localhost:' + port);
+      assume(result.headers).has.property('Host', 'localhost:' + port);
       assume(result.headers).has.property('Authorization');
       assume(result.headers).has.property('X-Amz-Date');
       assume(result.headers).has.property('x-amz-acl', 'public-read');
@@ -1138,7 +1137,7 @@ describe('Controller', () => {
         });
 
         assume(result).has.property('method', 'PUT');
-        assume(result).has.property('url', 'http://bucket.localhost:8080/key');
+        assume(result).has.property('url', 'http://localhost:8080/bucket/key');
         assume(result).has.property('headers');
         assume(result.headers).has.property('x-amz-storage-class', storageClass ? storageClass : 'STANDARD');
       });

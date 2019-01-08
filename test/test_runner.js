@@ -6,7 +6,7 @@ const sinon = require('sinon');
 const http = require('http');
 const urllib = require('url');
 
-const Runner = require('../lib/runner');
+const { Runner } = require('../lib/runner');
 
 const assertReject = require('./utils').assertReject;
 
@@ -114,7 +114,7 @@ describe('Request Runner', () => {
     let sandbox;
 
     beforeEach(() => {
-      sandbox = sinon.sandbox.create();
+      sandbox = sinon.createSandbox();
     });
 
     afterEach(() => {
